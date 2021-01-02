@@ -1,12 +1,24 @@
-cmake_minimum_required(VERSION 2.8.12)
-project(SeriousProton)
+cmake_minimum_required(VERSION 3.7)
+project(SeriousProton VERSION 1.0)
+
+set(CMAKE_CXX_STANDARD 14)
+set(CMAKE_CXX_STANDARD_REQUIRED True)
 set(CMAKE_MODULE_PATH
 	${CMAKE_SOURCE_DIR}/cmake/
 	${CMAKE_MODULE_PATH}
 )
 
+#--------------------------------Dependencies----------------------------------
+find_package(SFML 2.3 REQUIRED COMPONENTS system audio network window graphics)
+find_package(SDL2 REQUIRED)
+add_subdirectory("${PROJECT_SOURCE_DIR}/src/Box2D")
+add_subdirectory("${PROJECT_SOURCE_DIR}/src/lua")
+add_subdirectory("${PROJECT_SOURCE_DIR}/src/GL")
+add_subdirectory("${PROJECT_SOURCE_DIR}/src/json11")
+
+
 #---------------------------------File lists-----------------------------------
-set(source_files_relative #All SeriousProton's objects to compile
+set(SOURCES #All SeriousProton's objects to compile
 	src/clipboard.cpp
 	src/collisionable.cpp
 	src/engine.cpp
@@ -18,6 +30,7 @@ set(source_files_relative #All SeriousProton's objects to compile
 	src/logging.cpp
 	src/multiplayer.cpp
 	src/multiplayer_client.cpp
+	src/multiplayer_proxy.cpp
 	src/multiplayer_server.cpp
 	src/multiplayer_server_scanner.cpp
 	src/networkAudioStream.cpp
@@ -36,83 +49,44 @@ set(source_files_relative #All SeriousProton's objects to compile
 	src/tween.cpp
 	src/Updatable.cpp
 	src/windowManager.cpp
-)
-set(source_files "")
-foreach(source_file_relative ${source_files_relative})
-	list(APPEND source_files ${CMAKE_CURRENT_SOURCE_DIR}/${source_file_relative})
-endforeach()
-
-set(seriousproton_include_dir ${CMAKE_CURRENT_SOURCE_DIR}/src/)
-
-include_directories(
-	${CMAKE_CURRENT_BINARY_DIR}
-	${CMAKE_CURRENT_SOURCE_DIR}/src
-	${CMAKE_CURRENT_SOURCE_DIR}/src/libopus/include
+	src/i18n.cpp
+	src/P.cpp
 )
 
-#----------------------------------Compiling-----------------------------------
-if(CMAKE_VERSION VERSION_LESS "3.1")
-	if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
-		set(CMAKE_CXX_FLAGS "-std=gnu++11 ${CMAKE_CXX_FLAGS}")
-	endif()
-else()
-	set(CMAKE_CXX_STANDARD 11)
-endif()
+add_library(SeriousProton STATIC ${SOURCES})
 
-add_library(seriousproton STATIC ${source_files})
-target_compile_definitions(seriousproton
-	PUBLIC
-		SFML_NO_DEPRECATED_WARNINGS # SFML 2.5 gives deprication warnings on a few functions we use. But we maintain 2.3 compatibility, so ignore those warnings.
-		$<$<BOOL:${WIN32}>:NOMINMAX>
+target_compile_options(${PROJECT_NAME} PUBLIC
+	$<$<NOT:$<BOOL:${MSVC}>>:-Wall -Werror=return-type>
+	$<$<BOOL:${MSVC}>:/MP>
 )
 
-#--------------------------------Dependencies----------------------------------
-include(ExternalProject)
-
-add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/src/Box2D)
-add_dependencies(seriousproton box2d)
-
-add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/src/lua)
-add_dependencies(seriousproton lua)
-
-add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/src/GL)
-add_dependencies(seriousproton glew)
-
-find_package(SFML 2.3 COMPONENTS system audio network window graphics)
-if(NOT ${SFML_FOUND})
-	message(STATUS "Couldn't find SFML. Building it from scratch. Installing to ${CMAKE_INSTALL_PREFIX}")
-	ExternalProject_Add(SFML
-		GIT_REPOSITORY https://github.com/SFML/SFML.git
-		GIT_TAG 2.4.2 #Always build with this tag, so we're sure it is stable.
-		CMAKE_ARGS -DCMAKE_INSTALL_PREFIX=${CMAKE_INSTALL_PREFIX} -DBUILD_SHARED_LIBS=OFF
-	)
-	set(SFML_INCLUDE_DIR ${CMAKE_INSTALL_PREFIX}/include) #Otherwise this is filled by FindSFML.cmake.
-	set(SFML_LIBRARIES
-		${CMAKE_INSTALL_PREFIX}/lib/${CMAKE_STATIC_LIBRARY_PREFIX}sfml-audio${CMAKE_STATIC_LIBRARY_SUFFIX}
-		${CMAKE_INSTALL_PREFIX}/lib/${CMAKE_STATIC_LIBRARY_PREFIX}sfml-graphics${CMAKE_STATIC_LIBRARY_SUFFIX}
-		${CMAKE_INSTALL_PREFIX}/lib/${CMAKE_STATIC_LIBRARY_PREFIX}sfml-network${CMAKE_STATIC_LIBRARY_SUFFIX}
-		${CMAKE_INSTALL_PREFIX}/lib/${CMAKE_STATIC_LIBRARY_PREFIX}sfml-system${CMAKE_STATIC_LIBRARY_SUFFIX}
-		${CMAKE_INSTALL_PREFIX}/lib/${CMAKE_STATIC_LIBRARY_PREFIX}sfml-window${CMAKE_STATIC_LIBRARY_SUFFIX}
-	)
-	add_dependencies(seriousproton SFML)
-endif()
-include_directories(${SFML_INCLUDE_DIR})
-target_link_libraries(seriousproton ${SFML_LIBRARIES})
+target_include_directories(SeriousProton PUBLIC "${SFML_INCLUDE_DIR}"
+	$<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/src>  
+	$<INSTALL_INTERFACE:include/seriousproton>  # <prefix>/include/mylib
+	$<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/src/libopus/include>
+	${SDL2_INCLUDE_DIRS}
+)
+target_compile_definitions(${PROJECT_NAME} PUBLIC
+	SFML_NO_DEPRECATED_WARNINGS # SFML 2.5 gives deprication warnings on a few functions we use. But we maintain 2.3 compatibility, so ignore those warnings.
+	# Platform-specific
+	$<$<BOOL:${WIN32}>:NOMINMAX>
+)
+target_link_libraries(SeriousProton PUBLIC box2d lua glew $<BUILD_INTERFACE:json11> ${SFML_LIBRARIES} ${SDL2_LIBRARIES})
 
 #--------------------------------Installation----------------------------------
 install(
-	TARGETS seriousproton
+	TARGETS SeriousProton
 	EXPORT seriousproton
 	LIBRARY DESTINATION lib
 	ARCHIVE DESTINATION lib
 )
 install(
-	DIRECTORY ${seriousproton_include_dir}
+	DIRECTORY "${PROJECT_SOURCE_DIR}/src"
 	DESTINATION include/seriousproton
 	FILES_MATCHING PATTERN "*.h"
 )
 install(
-	DIRECTORY ${seriousproton_include_dir}
+	DIRECTORY "${PROJECT_SOURCE_DIR}/src"
 	DESTINATION include/seriousproton
 	FILES_MATCHING PATTERN "*.hpp"
 )
