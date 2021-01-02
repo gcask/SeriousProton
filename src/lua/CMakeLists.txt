@@ -1,5 +1,5 @@
-cmake_minimum_required(VERSION 2.8.12)
-project(Box2D)
+cmake_minimum_required(VERSION 3.7)
+project(lua)
 
 #---------------------------------File lists-----------------------------------
 set(source_files_relative
