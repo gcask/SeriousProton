@@ -8,6 +8,7 @@
 #include <SFML/Graphics.hpp>
 #include "P.h"
 #include "Renderable.h"
+#include "SDL_events.h"
 
 class WindowManager : public virtual PObject
 {
@@ -18,6 +19,7 @@ private:
 
     sf::Vector2i virtualSize;
     sf::RenderWindow window;
+    SDL_Window* sdl_window = nullptr;
     RenderChain* renderChain;
     bool fullscreen;
     int fsaa;
@@ -41,10 +43,11 @@ public:
 
     sf::Vector2f mapPixelToCoords(const sf::Vector2i& point) const;
     sf::Vector2i mapCoordsToPixel(const sf::Vector2f& point) const;
-
+    bool pollEvent(SDL_Event&);
     friend class InputHandler;
     friend class Engine;
     friend class Clipboard;
+    
 private:
     void create();
     void setupView();

@@ -37,11 +37,13 @@ WindowManager::WindowManager(int virtualWidth, int virtualHeight, bool fullscree
 
 WindowManager::~WindowManager()
 {
+    SDL_DestroyWindow(sdl_window);
 }
 
 void WindowManager::render()
 {
-    if (InputHandler::keyboardIsPressed(sf::Keyboard::Return) && (sf::Keyboard::isKeyPressed(sf::Keyboard::LAlt) || sf::Keyboard::isKeyPressed(sf::Keyboard::RAlt)))
+    auto mods = SDL_GetModState();
+    if (InputHandler::keyboardIsPressed(SDL_SCANCODE_RETURN) && (mods & KMOD_ALT) != 0)
     {
         setFullscreen(!isFullscreen());
     }
@@ -86,6 +88,11 @@ sf::Vector2i WindowManager::mapCoordsToPixel(const sf::Vector2f& point) const
     return window.mapCoordsToPixel(point);
 }
 
+bool WindowManager::pollEvent(SDL_Event& event)
+{
+    return SDL_PollEvent(&event) != 0;
+}
+
 void WindowManager::create()
 {
     // Create the window of the application
@@ -116,6 +123,7 @@ void WindowManager::create()
         window.create(sf::VideoMode(windowWidth, windowHeight, 32), WINDOW_TITLE, sf::Style::Fullscreen, context_settings);
     else
         window.create(sf::VideoMode(windowWidth, windowHeight, 32), WINDOW_TITLE, sf::Style::Default, context_settings);
+    SDL_CreateWindowFrom(window.getSystemHandle());
     sf::ContextSettings settings = window.getSettings();
     LOG(INFO) << "OpenGL version: " << settings.majorVersion << "." << settings.minorVersion;
     window.setVerticalSyncEnabled(false);

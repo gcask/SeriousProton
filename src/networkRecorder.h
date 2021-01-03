@@ -4,6 +4,7 @@
 #include <SFML/Audio.hpp>
 #include <SFML/Network.hpp>
 #include <SFML/Window.hpp>
+#include "SDL_events.h"
 #include <stdint.h>
 #include <list>
 
@@ -16,7 +17,7 @@ class NetworkAudioRecorder : private sf::SoundRecorder, public Updatable
 private:
     struct KeyConfig
     {
-        sf::Keyboard::Key key;
+        SDL_Scancode key;
         int target_identifier;
     };
     std::vector<KeyConfig> keys;
@@ -29,7 +30,7 @@ public:
     NetworkAudioRecorder();
     virtual ~NetworkAudioRecorder();
 
-    void addKeyActivation(sf::Keyboard::Key key, int target_identifier);
+    void addKeyActivation(const SDL_Scancode &key, int target_identifier);
 
 protected:
     virtual bool onProcessSamples(const sf::Int16* samples, std::size_t sample_count) override;
