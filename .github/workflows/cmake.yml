@@ -1,6 +1,9 @@
 name: CMake
 
-on: [push, pull_request]
+on:
+  push:
+    branches: [master]
+  pull_request:
 
 jobs:
   linux:
@@ -54,9 +57,10 @@ jobs:
     steps:
     - name: Setup
       run: |
-        $client = new-object System.Net.WebClient
-        $client.DownloadFile(“https://www.sfml-dev.org/files/SFML-2.5.1-windows-vc15-32-bit.zip”,“%GITHUB_WORKSPACE%/sfml-dev.zip”)
-        Expand-Archive -LiteralPath “%GITHUB_WORKSPACE%/sfml-dev.zip” -DestinationPath "%GITHUB_WORKSPACE%/externals"
+        $sfml_link = “https://www.sfml-dev.org/files/SFML-2.5.1-windows-vc15-32-bit.zip”
+        $sfml_zip = “$env:GITHUB_WORKSPACE/sfml-dev.zip”
+        (new-object System.Net.WebClient).DownloadFile($sfml_link, $sfml_zip)
+        Expand-Archive -LiteralPath $sfml_zip -DestinationPath "$env:GITHUB_WORKSPACE/externals"
     - uses: actions/checkout@v2
     - name: Create Build Environment
       # Some projects don't allow in-source building, so create a separate build directory
@@ -70,7 +74,7 @@ jobs:
       # Note the current convention is to use the -S and -B options here to specify source 
       # and build directories, but this is only available with CMake 3.13 and higher.  
       # The CMake binaries on the Github Actions machines are (as of this writing) 3.12
-      run: cmake %GITHUB_WORKSPACE% -G "Visual Studio 16 2019" -A Win32 -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} -DSFML_ROOT="%GITHUB_WORKSPACE%/externals/SFML-2.5.1"
+      run: cmake %GITHUB_WORKSPACE% -G "Visual Studio 16 2019" -A Win32 -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} -DSFML_ROOT="$env:GITHUB_WORKSPACE/externals/SFML-2.5.1"
 
     - name: Build
       working-directory: ${{runner.workspace}}/build
