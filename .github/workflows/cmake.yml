@@ -20,14 +20,15 @@ jobs:
 
     steps:
     - name: Setup (apt)
-      if: matrix.os == 'ubuntu-latest'
+      if: ${{ startsWith(matrix.os, 'ubuntu') }}
       run: |
         sudo apt update -qq
         sudo apt install git build-essential cmake ninja-build zip unzip libsfml-dev
     - name: Setup (brew)
-      if: matrix.os == 'macos-latest'
+      if: ${{ startsWith(matrix.os, 'macos') }}
       run: brew install cmake sfml ninja
     - name: Setup (windows)
+      if: ${{ startsWith(matrix.os, 'windows') }}
       run: |
         $sfml_link = “https://www.sfml-dev.org/files/SFML-2.5.1-windows-vc15-32-bit.zip”
         $sfml_zip = “$env:GITHUB_WORKSPACE/sfml-dev.zip”
@@ -42,7 +43,7 @@ jobs:
       run: cmake -E make_directory ${{runner.workspace}}/build
     
     - name: Configure CMake (windows)
-      if: matrix.os == 'windows-latest'
+      if: ${{ startsWith(matrix.os, 'windows') }}
       # Use a bash shell so we can use the same syntax for environment variable
       # access regardless of the host operating system
       working-directory: ${{runner.workspace}}/build
@@ -51,7 +52,7 @@ jobs:
       # The CMake binaries on the Github Actions machines are (as of this writing) 3.12
       run: cmake $env:GITHUB_WORKSPACE -G "Visual Studio 16 2019" -A Win32 -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} -DSFML_ROOT="$env:GITHUB_WORKSPACE/externals/SFML-2.5.1"
     - name: Configure CMake (unix-like)
-      if: matrix.os != 'windows-latest'
+      if: ${{ !startsWith(matrix.os, 'windows') }}
       # Use a bash shell so we can use the same syntax for environment variable
       # access regardless of the host operating system
       shell: bash
