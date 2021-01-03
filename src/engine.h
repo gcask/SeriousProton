@@ -2,6 +2,7 @@
 #define ENGINE_H
 
 #include <unordered_map>
+#include "SDL_events.h"
 #include "stringImproved.h"
 #include "P.h"
 
@@ -64,7 +65,7 @@ public:
     void runMainLoop();
     void shutdown();
 private:
-    void handleEvent(sf::Event& event);
+    void handleEvent(SDL_Event& event);
 };
 
 #endif//ENGINE_H

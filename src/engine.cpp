@@ -94,15 +94,15 @@ void Engine::runMainLoop()
         {
             InputHandler::preEventsUpdate();
             // Handle events
-            sf::Event event;
-            while (windowManager->window.pollEvent(event))
+            SDL_Event event;
+            while (windowManager->pollEvent(event))
             {
                 handleEvent(event);
             }
             InputHandler::postEventsUpdate();
 
 #ifdef DEBUG
-            if (sf::Keyboard::isKeyPressed(sf::Keyboard::Escape) && windowManager->hasFocus())
+            if (SDL_SCANCODE_isKeyPressed(SDL_SCANCODE_ESCAPE) && windowManager->hasFocus())
                 running = false;
 
             if (debugOutputClock.getElapsedTime().asSeconds() > 1.0)
@@ -119,9 +119,9 @@ void Engine::runMainLoop()
                 delta = 0.001;
             delta *= gameSpeed;
 #ifdef DEBUG
-            if (sf::Keyboard::isKeyPressed(sf::Keyboard::Tab))
+            if (SDL_SCANCODE_isKeyPressed(SDL_SCANCODE_Tab))
                 delta /= 5.0;
-            if (sf::Keyboard::isKeyPressed(sf::Keyboard::Tilde))
+            if (SDL_SCANCODE_isKeyPressed(SDL_SCANCODE_Tilde))
                 delta *= 5.0;
 #endif
             EngineTiming engine_timing;
@@ -150,17 +150,20 @@ void Engine::runMainLoop()
     }
 }
 
-void Engine::handleEvent(sf::Event& event)
+void Engine::handleEvent(SDL_Event& event)
 {
     // Window closed: exit
-    if (event.type == sf::Event::Closed)
+    if (event.type == SDL_QUIT)
         running = false;
-    if (event.type == sf::Event::GainedFocus)
-        windowManager->windowHasFocus = true;
-    if (event.type == sf::Event::LostFocus)
-        windowManager->windowHasFocus = false;
+    if (event.type == SDL_WINDOWEVENT)
+    {
+        if (event.window.event == SDL_WINDOWEVENT_FOCUS_GAINED)
+            windowManager->windowHasFocus = true;
+        if (event.type == SDL_WINDOWEVENT_FOCUS_LOST)
+            windowManager->windowHasFocus = false;
+    }
 #ifdef DEBUG
-    if ((event.type == sf::Event::KeyPressed) && (event.key.code == sf::Keyboard::L))
+    if ((event.type == SDL_KEYDOWN) && (event.key.keysym.scancode == SDL_SCANCODE_L))
     {
         int n = 0;
         printf("---------------------\n");
@@ -170,23 +173,26 @@ void Engine::handleEvent(sf::Event& event)
     }
 #endif
     InputHandler::handleEvent(event);
-    if (event.type == sf::Event::Resized)
+    if (event.type == SDL_WINDOWEVENT && event.window.event == SDL_WINDOWEVENT_RESIZED)
         windowManager->setupView();
 #ifdef __ANDROID__
     //Focus lost and focus gained events are used when the application window is created and destroyed.
-    if (event.type == sf::Event::LostFocus)
-        running = false;
-    
-    //The MouseEntered and MouseLeft events are received when the activity needs to pause or resume.
-    if (event.type == sf::Event::MouseLeft)
+    if (event.type == SDL_WINDOWEVENT)
     {
-        //Pause is when a small popup is on top of the window. So keep running.
-        while(windowManager->window.isOpen() && windowManager->window.waitEvent(event))
+        if (event.window.event == SDL_WINDOWEVENT_FOCUS_LOST)
+            running = false;
+    
+        //The MouseEntered and MouseLeft events are received when the activity needs to pause or resume.
+        if (event.window.event == SDL_WINDOWEVENT_LEAVE)
         {
-            if (event.type != sf::Event::MouseLeft)
-                handleEvent(event);
-            if (event.type == sf::Event::MouseEntered)
-                break;
+            //Pause is when a small popup is on top of the window. So keep running.
+            while(windowManager->window.isOpen() && SDL_WaitEvent(&event))
+            {
+                if (event.type != SDL_WINDOWEVENT || event.window.event != SDL_WINDOWEVENT_LEAVE)
+                    handleEvent(event);
+                if (event.type == SDL_WINDOWEVENT_ENTER)
+                    break;
+            }
         }
     }
 #endif//__ANDROID__

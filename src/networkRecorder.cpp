@@ -26,7 +26,7 @@ NetworkAudioRecorder::~NetworkAudioRecorder()
     }
 }
 
-void NetworkAudioRecorder::addKeyActivation(sf::Keyboard::Key key, int target_identifier)
+void NetworkAudioRecorder::addKeyActivation(const SDL_Scancode& key, int target_identifier)
 {
     keys.push_back({key, target_identifier});
 }
