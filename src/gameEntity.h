@@ -1,6 +1,6 @@
 #ifndef GAME_ENTITY_H
 #define GAME_ENTITY_H
-
+#include <SFML/Graphics/Sprite.hpp>
 #include "Updatable.h"
 #include "Renderable.h"
 /**

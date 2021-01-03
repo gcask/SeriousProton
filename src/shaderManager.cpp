@@ -2,6 +2,8 @@
 #include "resources.h"
 #include "logging.h"
 
+#include <SFML/Graphics/Shader.hpp>
+
 std::map<string, ShaderInfo> ShaderManager::shaders;
 
 sf::Shader* ShaderManager::getShader(string name)

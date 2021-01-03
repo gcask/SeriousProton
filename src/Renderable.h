@@ -1,12 +1,17 @@
 #ifndef RENDERABLE_H
 #define RENDERABLE_H
+#include <SFML/System/NonCopyable.hpp>
 
-#include <SFML/Graphics.hpp>
 #include "P.h"
 
 class Renderable;
 class RenderLayer;
 extern RenderLayer* defaultRenderLayer;
+
+namespace sf
+{
+    class RenderTarget;
+}
 
 class RenderChain : public sf::NonCopyable
 {

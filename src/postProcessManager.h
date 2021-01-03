@@ -1,7 +1,9 @@
 #ifndef POST_PROCESS_MANAGER_H
 #define POST_PROCESS_MANAGER_H
 
-#include <SFML/Graphics.hpp>
+#include <SFML/Graphics/Shader.hpp>
+#include <SFML/Graphics/RenderTexture.hpp>
+#include <SFML/System/Vector2.hpp>
 
 #include "stringImproved.h"
 #include "Updatable.h"

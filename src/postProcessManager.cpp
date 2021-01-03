@@ -1,5 +1,7 @@
-#include "logging.h"
 #include "postProcessManager.h"
+#include "logging.h"
+
+#include <SFML/Graphics/Sprite.hpp>
 
 bool PostProcessor::global_post_processor_enabled = true;
 

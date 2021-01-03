@@ -9,7 +9,7 @@ set(CMAKE_MODULE_PATH
 )
 
 #--------------------------------Dependencies----------------------------------
-find_package(SFML 2.3 REQUIRED COMPONENTS system audio network window graphics)
+find_package(SFML 2.3 REQUIRED COMPONENTS system audio network graphics)
 find_package(SDL2 REQUIRED)
 add_subdirectory("${PROJECT_SOURCE_DIR}/src/Box2D")
 add_subdirectory("${PROJECT_SOURCE_DIR}/src/lua")
@@ -51,6 +51,7 @@ set(SOURCES #All SeriousProton's objects to compile
 	src/windowManager.cpp
 	src/i18n.cpp
 	src/P.cpp
+	src/sfml2sdl.cpp
 )
 
 add_library(SeriousProton STATIC ${SOURCES})

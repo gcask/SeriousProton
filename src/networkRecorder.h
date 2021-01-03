@@ -3,7 +3,6 @@
 
 #include <SFML/Audio.hpp>
 #include <SFML/Network.hpp>
-#include <SFML/Window.hpp>
 #include "SDL_events.h"
 #include <stdint.h>
 #include <list>

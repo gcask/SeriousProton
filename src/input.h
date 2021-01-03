@@ -1,6 +1,9 @@
 #ifndef INPUT_H
 #define INPUT_H
 #include "SDL_events.h"
+#include <SFML/Graphics/Transform.hpp>
+
+#include "sfml2sdl.h"
 #include "windowManager.h"
 #include "Updatable.h"
 
@@ -30,6 +33,8 @@ private:
 class InputHandler
 {
 public:
+    
+    
     static constexpr size_t MOUSE_BUTTON_COUNT = 8; // arbitrary, SDL does not provide a button count.
     static constexpr size_t JOYSTICK_COUNT = 8; // sfml -> sdl: SDL allows querying at runtime, for any number of joysticks, sfml limits to 8.
     static bool touch_screen;

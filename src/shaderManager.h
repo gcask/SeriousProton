@@ -1,8 +1,11 @@
 #ifndef SHADER_MANAGER_H
 #define SHADER_MANAGER_H
-
-#include <SFML/Graphics.hpp>
 #include "stringImproved.h"
+
+namespace sf
+{
+    class Shader;
+}
 
 class ShaderInfo
 {
