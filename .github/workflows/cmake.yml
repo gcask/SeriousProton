@@ -3,7 +3,7 @@ name: CMake
 on:
   push:
     branches: [master]
-    pull_request:
+  pull_request:
 
 jobs:
   unix:
@@ -33,7 +33,7 @@ jobs:
         $sfml_zip = “$env:GITHUB_WORKSPACE/sfml-dev.zip”
         (new-object System.Net.WebClient).DownloadFile($sfml_link, $sfml_zip)
         Expand-Archive -LiteralPath $sfml_zip -DestinationPath "$env:GITHUB_WORKSPACE/externals"
-        
+
     - uses: actions/checkout@v2
     
     - name: Create Build Environment
