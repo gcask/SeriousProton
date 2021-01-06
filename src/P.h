@@ -46,11 +46,11 @@ public:
         _destroyed_flag = true;
     }
     
-    int getRefCount()
+    int getRefCount() const
     { 
         return refCount;
     }
-    bool isDestroyed()
+    bool isDestroyed() const
     {
         return _destroyed_flag;
     }
@@ -124,7 +124,7 @@ public:
         return ptr != NULL;
     }
 
-    template<class T2> operator P<T2>()
+    template<class T2> operator P<T2>() const
     {
         return dynamic_cast<T2*>(**this);
     }
@@ -158,7 +158,7 @@ protected:
 template<class T>
 class PVector: public std::vector<P<T> > {
 public:
-    bool has(P<T> obj)
+    bool has(const P<T> &obj) const
     {
         for(unsigned int n=0; n<std::vector<P<T> >::size(); n++)
             if ((*this)[n] == obj)
@@ -166,7 +166,7 @@ public:
         return false;
     }
 
-    void remove(P<T> obj)
+    void remove(const P<T> &obj)
     {
         for(unsigned int n=0; n<std::vector<P<T> >::size(); n++)
         {
@@ -225,19 +225,19 @@ public:
 };
 #define foreach(type, var, list) for(Piterator<type> var(list); var; var.next())
 
-template<class T> bool operator == (P<T>& p, const PObject* ptr)
+template<class T> bool operator == (const P<T>& p, const PObject* ptr)
 {
     return *p == ptr;
 }
-template<class T> bool operator != (P<T>& p, const PObject* ptr)
+template<class T> bool operator != (const P<T>& p, const PObject* ptr)
 {
     return *p != ptr;
 }
-template<class T1, class T2> bool operator == (P<T1>& p1, P<T2>& p2)
+template<class T1, class T2> bool operator == (const P<T1>& p1, P<T2>& p2)
 {
     return *p1 == *p2;
 }
-template<class T1, class T2> bool operator != (P<T1>& p1, P<T2>& p2)
+template<class T1, class T2> bool operator != (const P<T1>& p1, P<T2>& p2)
 {
     return *p1 != *p2;
 }
