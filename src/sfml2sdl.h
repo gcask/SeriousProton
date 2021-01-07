@@ -1,9 +1,12 @@
 #ifndef SERIOUS_PROTON_SFML2SDL_H
 #define SERIOUS_PROTON_SFML2SDL_H
 #include <cstdint>
+#include <memory>
 #include "stringImproved.h"
+#include <SFML/System/Vector2.hpp>
 #include <SFML/Graphics/RenderTarget.hpp>
 #include <SFML/Window/ContextSettings.hpp>
+#include <SFML/Graphics/RenderWindow.hpp>
 
 namespace sf
 {
@@ -24,46 +27,6 @@ namespace sf
         };
         static constexpr uint32_t ButtonCount = 32;
     }
-
-namespace Style
-{
-    enum
-    {
-        None = 0,
-        Titlebar = 1 << 0,
-        Resize = 1 << 1,
-        Close = 1 << 2,
-        Fullscreen = 1 << 3,
-
-        Default = Titlebar | Resize | Close
-    };
-}
-
-    struct VideoMode
-    {
-        VideoMode(uint32_t modeWidth, uint32_t modeHeight, uint32_t modeBitsPerPixel = 32);
-        static VideoMode getDesktopMode();
-        uint32_t width = 0;
-        uint32_t height = 0;
-    };
-
-	class RenderWindow final : public sf::RenderTarget
-    {
-    public:
-        void setFramerateLimit(int32_t);
-        void setTitle(const string&);
-        bool isOpen() const;
-        const sf::View &getView() const;
-        sf::Vector2u getSize() const override final;
-        void *getSystemHandle() const;
-        void display();
-        void close();
-
-        void create(VideoMode mode, const string& title, Uint32 style = Style::Default, const ContextSettings& settings = ContextSettings());
-        const ContextSettings& getSettings() const;
-        void setVerticalSyncEnabled(bool);
-        void setMouseCursorVisible(bool);
-    };
 
     namespace Mouse
     {

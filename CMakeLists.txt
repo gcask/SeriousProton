@@ -9,12 +9,13 @@ set(CMAKE_MODULE_PATH
 )
 
 #--------------------------------Dependencies----------------------------------
-find_package(SFML 2.3 REQUIRED COMPONENTS system audio network graphics)
+find_package(SFML 2.3 REQUIRED COMPONENTS system audio network)
 find_package(SDL2 REQUIRED)
 add_subdirectory("${PROJECT_SOURCE_DIR}/src/Box2D")
 add_subdirectory("${PROJECT_SOURCE_DIR}/src/lua")
 add_subdirectory("${PROJECT_SOURCE_DIR}/src/GL")
 add_subdirectory("${PROJECT_SOURCE_DIR}/src/json11")
+add_subdirectory("${PROJECT_SOURCE_DIR}/src/SFML")
 
 
 #---------------------------------File lists-----------------------------------
@@ -72,7 +73,7 @@ target_compile_definitions(${PROJECT_NAME} PUBLIC
 	# Platform-specific
 	$<$<BOOL:${WIN32}>:NOMINMAX>
 )
-target_link_libraries(SeriousProton PUBLIC box2d lua glew $<BUILD_INTERFACE:json11> ${SFML_LIBRARIES} ${SDL2_LIBRARIES})
+target_link_libraries(SeriousProton PUBLIC box2d lua glew $<BUILD_INTERFACE:json11> $<BUILD_INTERFACE:SFMLoverSDL> ${SFML_LIBRARIES} ${SDL2_LIBRARIES})
 
 #--------------------------------Installation----------------------------------
 install(
