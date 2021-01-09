@@ -9,6 +9,8 @@ namespace sf
 		explicit RectangleShape(const Vector2f& size = Vector2f(0, 0));
 		void setSize(const Vector2f& size);
 		const Vector2f& getSize() const;
+	private:
+		Vector2f size;
 	};
 }
 #endif // SERIOUS_PROTON_SFML_OVER_SDL_RECTANGLESHAPE_HPP

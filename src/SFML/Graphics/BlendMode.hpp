@@ -2,7 +2,7 @@
 #define	SERIOUS_PROTON_SFML_OVER_SDL_BLENDMODE_HPP
 #include <SFML/Graphics/Color.hpp>
 #include <SFML/System/Vector2.hpp>
-
+#include "SDL_video.h"
 namespace sf
 {
 	struct BlendMode
@@ -23,6 +23,35 @@ namespace sf
             Count
         };
 
+        static constexpr SDL_BlendFactor factorAsSDL(Factor factor)
+        {
+            switch (factor)
+            {
+            case Zero:
+                return SDL_BLENDFACTOR_ZERO;
+            case One:
+                return SDL_BLENDFACTOR_ONE;
+            case SrcColor:
+                return SDL_BLENDFACTOR_SRC_COLOR;
+            case OneMinusSrcColor:
+                return SDL_BLENDFACTOR_ONE_MINUS_SRC_COLOR;
+            case DstColor:
+                return SDL_BLENDFACTOR_DST_COLOR;
+            case OneMinusDstColor:
+                return SDL_BLENDFACTOR_ONE_MINUS_DST_COLOR;
+            case SrcAlpha:
+                return SDL_BLENDFACTOR_SRC_ALPHA;
+            case OneMinusSrcAlpha:
+                return SDL_BLENDFACTOR_ONE_MINUS_SRC_ALPHA;
+            case DstAlpha:
+                return SDL_BLENDFACTOR_DST_ALPHA;
+            case OneMinusDstAlpha:
+                return SDL_BLENDFACTOR_ONE_MINUS_DST_ALPHA;
+            }
+
+            return SDL_BLENDFACTOR_ZERO;
+        }
+
         enum Equation
         {
             Add,
@@ -30,16 +59,27 @@ namespace sf
             ReverseSubtract
         };
 
+        static constexpr SDL_BlendOperation equationAsSDL(Equation equation)
+        {
+            switch (equation)
+            {
+            case Add:
+                return SDL_BLENDOPERATION_ADD;
+            case Subtract:
+                return SDL_BLENDOPERATION_SUBTRACT;
+            case ReverseSubtract:
+                return SDL_BLENDOPERATION_REV_SUBTRACT;
+            }
+
+            return SDL_BLENDOPERATION_ADD;
+        }
+
         BlendMode(Factor sourceFactor, Factor destinationFactor, Equation blendEquation = Add);
         BlendMode(Factor colorSourceFactor, Factor colorDestinationFactor,
             Equation colorBlendEquation, Factor alphaSourceFactor,
             Factor alphaDestinationFactor, Equation alphaBlendEquation);
-        struct BlendDetails
-        {
-            Factor src;
-            Factor dst;
-            Equation equation;
-        } color, alpha;
+        BlendMode();
+        SDL_BlendMode sdlObject;
 	};
 
     extern const BlendMode BlendAlpha;

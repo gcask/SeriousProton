@@ -2,6 +2,8 @@
 #define	SERIOUS_PROTON_SFML_OVER_SDL_TEXTURE_HPP
 #include <cstdint>
 #include <SFML/Graphics/Image.hpp>
+
+#include "SDL_surface.h"
 namespace sf
 {
 	class Texture
@@ -19,6 +21,8 @@ namespace sf
 		bool loadFromImage(const Image& image, const IntRect& area = IntRect());
 		void setRepeated(bool repeated);
 		void setSmooth(bool smooth);
+		
+		SDL_Surface *sdlObject = nullptr;
 	};
 }
 #endif // SERIOUS_PROTON_SFML_OVER_SDL_TEXTURE_HPP

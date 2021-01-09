@@ -23,6 +23,7 @@ namespace sf
         Text(const String& string, const Font& font, unsigned int characterSize = 30);
         void setColor(const Color& color);
         FloatRect getLocalBounds() const;
+        void draw(RenderTarget&, RenderStates) const override final;
 	};
 }
 #endif // SERIOUS_PROTON_SFML_OVER_SDL_TEXT_HPP

@@ -19,6 +19,7 @@ namespace sf
 		void setTextureRect(const IntRect& rectangle);
 		const IntRect& getTextureRect() const;
 		void setColor(const Color& color);
+		void draw(RenderTarget&, RenderStates) const override final;
 	};
 }
 #endif // SERIOUS_PROTON_SFML_OVER_SDL_SPRITE_HPP

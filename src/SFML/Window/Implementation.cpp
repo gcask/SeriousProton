@@ -14,13 +14,22 @@ namespace sf
         {}
     };
 	// VideoMode
-	VideoMode::VideoMode(uint32_t modeWidth, uint32_t modeHeight, uint32_t modeBitsPerPixel)
+	VideoMode::VideoMode(uint32_t modeWidth, uint32_t modeHeight, uint32_t /*modeBitsPerPixel*/)
+        :width(modeWidth), height(modeHeight)
     {
-        throw not_implemented();
+        sdlObject.h = height;
+        sdlObject.w = width;
     }
 
 	VideoMode VideoMode::getDesktopMode()
     {
-        throw not_implemented();
+        VideoMode desktop(0, 0);
+        if (!SDL_GetDesktopDisplayMode(0, &desktop.sdlObject))
+        {
+            desktop.width = desktop.sdlObject.w;
+            desktop.height = desktop.sdlObject.h;
+        }
+
+        return desktop;
     }
 }

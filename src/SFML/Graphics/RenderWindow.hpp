@@ -16,7 +16,6 @@ namespace sf
         void setFramerateLimit(int32_t);
         void setTitle(const std::string&);
         bool isOpen() const;
-        const sf::View& getView() const;
         sf::Vector2u getSize() const override final;
         void* getSystemHandle() const;
         void display();

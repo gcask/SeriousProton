@@ -63,10 +63,16 @@ namespace sf
 	};
 
 	template <typename T>
+	bool operator ==(const Rect<T>& left, const Rect<T>& right)
+	{
+		return (left.left == right.left) && (left.width == right.width) &&
+			(left.top == right.top) && (left.height == right.height);
+	}
+
+	template <typename T>
 	bool operator !=(const Rect<T>& left, const Rect<T>& right)
 	{
-		return !((left.left == right.left) && (left.width == right.width) &&
-			(left.top == right.top) && (left.height == right.height));
+		return !(left == right);
 	}
 
 	using IntRect = Rect<int32_t>;

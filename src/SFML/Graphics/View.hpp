@@ -13,6 +13,10 @@ namespace sf
 		void setViewport(const FloatRect& viewport);
 		const FloatRect& getViewport() const;
 		const Vector2f& getSize() const;
+	private:
+		Vector2f center;
+		Vector2f size;
+		FloatRect viewport;
 	};
 }
 #endif // SERIOUS_PROTON_SFML_OVER_SDL_VIEW_HPP

@@ -14,6 +14,8 @@ namespace sf
 		RenderStates(const Shader*);
 		RenderStates(const Texture* theTexture);
 
+		BlendMode blend;
+
 	};
 }
 #endif // SERIOUS_PROTON_SFML_OVER_SDL_TRANSFORMABLE_HPP

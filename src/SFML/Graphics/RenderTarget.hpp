@@ -8,6 +8,8 @@
 
 #include <SFML/System/NonCopyable.hpp>
 #include <SFML/System/Vector2.hpp>
+
+#include "SDL_render.h"
 namespace sf
 {
 	class Drawable;
@@ -18,13 +20,16 @@ namespace sf
 		virtual sf::Vector2u getSize() const;
 		const View& getView() const;
 		void setView(const View& view);
-		void clear(const Color& color = Color(0, 0, 0, 255));
+		void clear(const Color& color = Color::Black);
 
 		void draw(const Drawable& drawable, const RenderStates& states = RenderStates::Default);
 		Vector2f mapPixelToCoords(const Vector2i& point) const;
 		Vector2i mapCoordsToPixel(const Vector2f& point) const;
 		void popGLStates();
 		void pushGLStates();
+		SDL_Texture* sdlObject = nullptr;
+	private:
+		View view;
 	};
 }
 #endif // SERIOUS_PROTON_SFML_OVER_SDL_RENDERTARGET_HPP

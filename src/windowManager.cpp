@@ -13,6 +13,7 @@
 WindowManager::WindowManager(int virtualWidth, int virtualHeight, bool fullscreen, RenderChain* renderChain, int fsaa)
 : virtualSize(virtualWidth, virtualHeight), renderChain(renderChain), fullscreen(fullscreen), fsaa(fsaa)
 {
+    fullscreen = false;
     srand(time(NULL));
     windowHasFocus = true;
     min_aspect_ratio = float(virtualWidth) / float(virtualHeight);
@@ -123,7 +124,6 @@ void WindowManager::create()
         window.create(sf::VideoMode(windowWidth, windowHeight, 32), WINDOW_TITLE, sf::Style::Fullscreen, context_settings);
     else
         window.create(sf::VideoMode(windowWidth, windowHeight, 32), WINDOW_TITLE, sf::Style::Default, context_settings);
-    SDL_CreateWindowFrom(window.getSystemHandle());
     sf::ContextSettings settings = window.getSettings();
     LOG(INFO) << "OpenGL version: " << settings.majorVersion << "." << settings.minorVersion;
     window.setVerticalSyncEnabled(false);

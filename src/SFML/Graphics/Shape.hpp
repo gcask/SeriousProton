@@ -16,6 +16,13 @@ namespace sf
 		void setTexture(const Texture* texture, bool resetRect = false);
 		void setTextureRect(const IntRect& rect);
 		const IntRect& getTextureRect() const;
+		void draw(RenderTarget&, RenderStates) const override final;
+	private:
+		IntRect textureRect;
+		Color fill;
+		Color outline;
+		const Texture* texture = nullptr;
+		float outlineThickness;
 	};
 }
 #endif // SERIOUS_PROTON_SFML_OVER_SDL_SHAPE_HPP
