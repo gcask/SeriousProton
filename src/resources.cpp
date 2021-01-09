@@ -108,7 +108,7 @@ std::vector<string> DirectoryResourceProvider::findResources(string searchPatter
 
 void DirectoryResourceProvider::findResources(std::vector<string>& found_files, const string path, const string searchPattern)
 {
-#ifdef _WIN32
+#ifdef _MSC_VER
     WIN32_FIND_DATAA data;
     string search_root(basepath + path);
     if (!search_root.endswith("/"))

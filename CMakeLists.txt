@@ -52,7 +52,6 @@ set(SOURCES #All SeriousProton's objects to compile
 	src/windowManager.cpp
 	src/i18n.cpp
 	src/P.cpp
-	src/sfml2sdl.cpp
 )
 
 add_library(SeriousProton STATIC ${SOURCES})
