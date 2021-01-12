@@ -13,6 +13,7 @@ namespace sf
 		void setViewport(const FloatRect& viewport);
 		const FloatRect& getViewport() const;
 		const Vector2f& getSize() const;
+		const Vector2f& getCenter() const;
 	private:
 		Vector2f center;
 		Vector2f size;

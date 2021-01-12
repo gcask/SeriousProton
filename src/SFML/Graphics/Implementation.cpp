@@ -26,10 +26,15 @@
 #include "SDL_image.h"
 #include "SDL_ttf.h"
 #include <glm/ext/matrix_transform.hpp>
+#include <glm/ext/matrix_clip_space.hpp>
+#include <glm/gtc/type_ptr.hpp>
+#include "GL/glew.h"
 
 #include <stdexcept>
 #include <mutex>
 #include <chrono>
+
+#include <SFML/System/MemoryInputStream.hpp>
 
 namespace std
 {
@@ -58,8 +63,67 @@ namespace std
     };
 }
 
+#ifndef CHECKED_GL
+#ifndef NDEBUG
+#define CHECKED_GL 1
+#else
+#define CHECKED_GL 0
+#endif
+#endif
+
+#if CHECKED_GL
+#define glChecked(call) \
+    do { \
+        auto error = glGetError(); \
+        SDL_assert(error == GL_NO_ERROR); \
+        call; \
+        error = glGetError(); \
+        SDL_assert(error == GL_NO_ERROR); \
+    } while(false)
+#else
+#define glChecked(call) call
+#endif
 namespace sf
 {
+    namespace
+    {
+        Shader DefaultShader;
+        struct ScopedShader final
+        {
+            explicit ScopedShader(Shader& shader)
+            {
+                Shader::bind(&shader);
+            }
+
+            ~ScopedShader()
+            {
+                Shader::bind(nullptr);
+            }
+        };
+
+        constexpr const char* vertexShader = R"glsl(
+            #version 100
+            attribute vec2 position;
+            attribute vec4 color;
+            uniform mat4 projection;
+            varying vec4 vertexColor;
+            void main()
+            {
+                gl_Position = projection * vec4(position, 0.0, 1.0);
+                vertexColor = color;
+            }
+        )glsl";
+
+        constexpr const char * fragmentShader = R"glsl(
+            #version 100
+            precision mediump float;
+            varying vec4 vertexColor;
+            void main()
+            {
+                gl_FragColor = vertexColor;
+            }
+        )glsl";
+    }
     namespace rwops
     {
         InputStream& getStream(SDL_RWops* context)
@@ -382,14 +446,24 @@ namespace sf
     }
     void RenderTarget::clear(const Color& color)
     {
-        auto renderer = SDL_GetRenderer(SDL_GL_GetCurrentWindow());
-        SDL_SetRenderTarget(renderer, sdlObject);
-        SDL_SetRenderDrawColor(renderer, color.r, color.g, color.b, color.a);
-        SDL_RenderClear(renderer);
+        glClearColor(color.r / 255.f, color.g / 255.f, color.b / 255.f, color.a / 255.f);
+        glClear(GL_COLOR_BUFFER_BIT);
     }
 
     void RenderTarget::draw(const Drawable& drawable, const RenderStates& states)
     {
+        auto size = getSize();
+        auto viewport = getView().getViewport();
+        // OpenGL viewport has (0,0) at center.
+        IntRect viewportGl(
+            static_cast<int32_t>(0.5f + size.x * viewport.left),
+            static_cast<int32_t>(0.5f + size.y * viewport.top),
+            static_cast<int32_t>(0.5f + size.x * viewport.width),
+            static_cast<int32_t>(0.5f + size.y * viewport.height)
+        );
+        // flip "vertical" y axis.
+        auto top = size.y - (viewportGl.top + viewportGl.height);
+        glChecked(glViewport(viewportGl.left, top, viewportGl.width, viewportGl.height));
         drawable.draw(*this, states);
     }
     Vector2f RenderTarget::mapPixelToCoords(const Vector2i& point) const
@@ -440,6 +514,7 @@ namespace sf
         SDL_GLContext context = nullptr;
         ContextSettings settings;
         uint32_t delay = 0;
+        uint32_t lastStart = 0;
 
         ~Impl()
         {
@@ -494,11 +569,24 @@ namespace sf
     }
     void RenderWindow::display()
     {
-        throw not_implemented();
+        if (impl)
+        {
+            
+            SDL_assert(impl->renderer);
+            SDL_GL_SwapWindow(impl->window);
+            if (impl->lastStart)
+            {
+                // Do we need to throttle?
+                auto elapsed = SDL_GetTicks() - impl->lastStart;
+                if (elapsed < impl->delay)
+                    SDL_Delay(impl->delay - elapsed);
+            }
+            impl->lastStart = SDL_GetTicks();
+        }
     }
     void RenderWindow::close()
     {
-        throw not_implemented();
+        impl.reset();
     }
 
     void RenderWindow::create(VideoMode mode, const std::string& title, Uint32 style, const ContextSettings& settings)
@@ -540,7 +628,11 @@ namespace sf
             impl->settings.minorVersion = value;
         if (!SDL_GL_GetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, &value))
             impl->settings.majorVersion = value;
-
+        glewInit();
+        sf::MemoryInputStream vertexShaderStream, fragmentShaderStream;
+        vertexShaderStream.open(vertexShader, strlen(vertexShader) + 1);
+        fragmentShaderStream.open(fragmentShader, strlen(fragmentShader) + 1);
+        DefaultShader.loadFromStream(vertexShaderStream, fragmentShaderStream);
         
         setTitle(title);
     }
@@ -566,17 +658,128 @@ namespace sf
     }
     void Shader::bind(const Shader* shader)
     {
-        throw not_implemented();
+        auto program = 0;
+        if (shader)
+        {
+            SDL_assert(shader->program != 0);
+            program = shader->program;
+        }
+
+
+        glUseProgram(program);
     }
     bool Shader::loadFromFile(const std::string&, Type)
     {
         throw not_implemented();
     }
+
+    namespace
+    {
+        class ScopedRWops final
+        {
+        public:
+            explicit ScopedRWops(SDL_RWops *ops)
+                :ops(ops)
+            {}
+            ~ScopedRWops()
+            {
+                SDL_FreeRW(ops);
+            }
+
+            SDL_RWops* get() const
+            {
+                return ops;
+            }
+
+            operator bool() const
+            {
+                return ops != nullptr;
+            }
+        private:
+            SDL_RWops* ops = nullptr;
+        };
+        bool compileShader(GLuint shader, InputStream& shaderSource)
+        {
+            ScopedRWops sdlStream(rwops::fromStream(shaderSource));
+            if (!sdlStream)
+                return false;
+
+            auto length = SDL_RWsize(sdlStream.get());
+            if (length < 0)
+            {
+                SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Unable to get stream size: %s", SDL_GetError());
+                return false;
+            }
+            {
+                std::vector<char> code(length);
+                if (SDL_RWread(sdlStream.get(), code.data(), code.size(), 1) == 0)
+                {
+                    SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "Empty or error shader stream: %s", SDL_GetError());
+                    return false;
+                }
+
+                const char* sources[1] = { code.data() };
+                glChecked(glShaderSource(shader, 1, sources, nullptr));
+            }
+            glChecked(glCompileShader(shader));
+            GLint status = GL_FALSE;
+            glChecked(glGetShaderiv(shader, GL_COMPILE_STATUS, &status));
+            SDL_assert(status == GL_TRUE);
+            if (status == GL_FALSE)
+            {
+                GLsizei logLength = 0;
+                glChecked(glGetShaderiv(shader, GL_INFO_LOG_LENGTH, &logLength));
+                std::vector<char> compileLog(size_t(logLength) + 1);
+                glChecked(glGetShaderInfoLog(shader, compileLog.size(), nullptr, compileLog.data()));
+                compileLog[logLength] = '\0';
+                SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Shader compilation failed: %s", compileLog.data());
+            }
+
+            return status == GL_TRUE;
+        }
+    }
     bool Shader::loadFromStream(InputStream& vertexShaderStream, InputStream& fragmentShaderStream)
     {
-        throw not_implemented();
+        SDL_assert(program == 0);
+        glChecked(vertexShader = glCreateShader(GL_VERTEX_SHADER));
+        if (!compileShader(vertexShader, vertexShaderStream))
+        {
+            glChecked(glDeleteShader(vertexShader));
+            vertexShader = 0;
+            return false;
+        }
+
+        glChecked(fragmentShader = glCreateShader(GL_FRAGMENT_SHADER));
+        if (!compileShader(fragmentShader, fragmentShaderStream))
+        {
+            glChecked(glDeleteShader(fragmentShader));
+            fragmentShader = 0;
+            glChecked(glDeleteShader(vertexShader));
+            vertexShader = 0;
+            return false;
+        }
+
+        glChecked(program = glCreateProgram());
+        glChecked(glAttachShader(program, vertexShader));
+        glChecked(glAttachShader(program, fragmentShader));
+        glChecked(glLinkProgram(program));
+
+        return true;
+    }
+    int32_t Shader::attribute(const char* name) const
+    {
+        if (!program)
+            return -1;
+        return glGetAttribLocation(program, name);
     }
 
+    template<>
+    void Shader::setUniform(const std::string& name, const glm::mat4&matrix)
+    {
+        GLint location = 0;
+        glChecked(location = glGetUniformLocation(program, name.c_str()));
+        glChecked(glUniformMatrix4fv(location, 1, GL_FALSE, glm::value_ptr(matrix)));
+    }
 #pragma region Shape
     void Shape::setFillColor(const Color& color)
     {
@@ -753,25 +956,74 @@ namespace sf
 #pragma endregion Vertex
 
 #pragma region VertexArray
-    VertexArray::VertexArray(PrimitiveType type, std::size_t vertexCount)
+    namespace gl
     {
-        throw not_implemented();
+        GLenum primitive_cast(PrimitiveType type)
+        {
+            switch (type)
+            {
+            case Points:
+                return GL_POINTS;
+            case Lines:
+                return GL_LINES;
+            case LineStrip:
+                return GL_LINE_STRIP;
+            case Triangles:
+                return GL_TRIANGLES;
+            case TriangleStrip:
+                return GL_TRIANGLE_STRIP;
+            case TriangleFan:
+                return GL_TRIANGLE_FAN;
+            case Quads:
+                return GL_QUADS;
+            }
+
+            return GL_NONE;
+        }
+    }
+    VertexArray::VertexArray(PrimitiveType type, std::size_t vertexCount)
+        :vertices(vertexCount),
+        type{gl::primitive_cast(type)}
+    {
+        glChecked(glGenBuffers(1, &vbo));
+    }
+    VertexArray::~VertexArray()
+    {
+        glChecked(glDeleteBuffers(1, &vbo));
     }
     Vertex& VertexArray::operator [](std::size_t index)
     {
-        throw not_implemented();
+        return vertices[index];
     }
     const Vertex& VertexArray::operator [](std::size_t index) const
     {
-        throw not_implemented();
+        return vertices[index];
     }
     std::size_t VertexArray::getVertexCount() const
     {
-        throw not_implemented();
+        return vertices.size();
     }
-    void VertexArray::draw(RenderTarget&, RenderStates) const
+    void VertexArray::draw(RenderTarget&target, RenderStates) const
     {
-        throw not_implemented();
+        glChecked(glBindBuffer(GL_ARRAY_BUFFER, vbo));
+        glChecked(glBufferData(GL_ARRAY_BUFFER, vertices.size() * sizeof(decltype(vertices)::value_type), vertices.data(), GL_STATIC_DRAW));
+
+        float ratio = target.getSize().x / float(target.getSize().y);
+        auto viewSize = target.getView().getSize();
+        auto viewCenter = target.getView().getCenter();
+        glm::mat4 projection = glm::ortho(0.f, float(target.getSize().x), float(target.getSize().y), 0.f, -1.f, 1.f);
+        glm::mat4 view = glm::mat4();// glm::lookAt(glm::vec3(viewCenter.x, viewCenter.y, -200), glm::vec3(viewCenter.x, viewCenter.y, 0), glm::vec3(0, 0, 1));
+        ScopedShader shader(DefaultShader);
+        auto posAttrib = DefaultShader.attribute("position");
+        auto colorAttrib = DefaultShader.attribute("color");
+        DefaultShader.setUniform("projection", projection);
+        glChecked(glEnableVertexAttribArray(posAttrib));
+        glChecked(glEnableVertexAttribArray(colorAttrib));
+        glChecked(glVertexAttribPointer(posAttrib, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex), (GLvoid*)0));
+        glChecked(glVertexAttribPointer(colorAttrib, 4, GL_UNSIGNED_BYTE, GL_TRUE, sizeof(Vertex), (GLvoid*)sizeof(Vector2f)));
+        glDrawArrays(type, 0, vertices.size());
+        glChecked(glDisableVertexAttribArray(colorAttrib));
+        glChecked(glDisableVertexAttribArray(posAttrib));
     }
 #pragma endregion VertexArray
 #pragma region View
@@ -803,6 +1055,10 @@ namespace sf
     const Vector2f& View::getSize() const
     {
         return size;
+    }
+    const Vector2f& View::getCenter() const
+    {
+        return center;
     }
 #pragma endregion View
 }
