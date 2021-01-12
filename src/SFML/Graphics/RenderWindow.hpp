@@ -1,6 +1,7 @@
 #ifndef SERIOUS_PROTON_SFML_OVER_SDL_RENDERWINDOW_HPP
 #define	SERIOUS_PROTON_SFML_OVER_SDL_RENDERWINDOW_HPP
 #include <cstdint>
+#include <memory>
 #include <string>
 #include <SFML/Window/ContextSettings.hpp>
 #include <SFML/Graphics/RenderTarget.hpp>
