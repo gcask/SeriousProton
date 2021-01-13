@@ -10,6 +10,7 @@ namespace sf
 		void setSize(const Vector2f& size);
 		const Vector2f& getSize() const;
 	private:
+		PrimitiveType getType() const override final;
 		Vector2f size;
 	};
 }

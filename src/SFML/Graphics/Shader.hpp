@@ -6,6 +6,8 @@
 #include <SFML/System/InputStream.hpp>
 #include <SFML/System/NonCopyable.hpp>
 #include <glm/mat4x4.hpp>
+
+#include "SDL_assert.h"
 namespace sf
 {
 	class Shader : NonCopyable
@@ -25,7 +27,7 @@ namespace sf
 		template<typename T>
 		void setUniform(const std::string& name, const T& x)
 		{
-
+			SDL_assert_release(false && "not implemented");
 		}
 
 		// Non-SFML
@@ -39,5 +41,9 @@ namespace sf
 	template<>
 	void Shader::setUniform<glm::mat4>(const std::string&, const glm::mat4&);
 	extern template void Shader::setUniform(const std::string &, const glm::mat4&);
+
+	template<>
+	void Shader::setUniform<Color>(const std::string&, const Color&);
+	extern template void Shader::setUniform(const std::string&, const Color&);
 }
 #endif // SERIOUS_PROTON_SFML_OVER_SDL_SHADER_HPP

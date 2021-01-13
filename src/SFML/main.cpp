@@ -1,4 +1,5 @@
 #include "SDL.h"
+#include <SFML/Graphics/CircleShape.hpp>
 #include <SFML/Graphics/RenderWindow.hpp>
 #include <SFML/Graphics/RectangleShape.hpp>
 #include <SFML/Graphics/VertexArray.hpp>
@@ -20,8 +21,13 @@ int main(int, char* [])
 	vertices[1].position = sf::Vector2f(100.f, 10.f);
 	vertices[2].position = sf::Vector2f(100.f, 100.f);
 
-	//rectangle.setSize({ window.getSize().x / 4.f, window.getSize().y / 4.f });
+	sf::RectangleShape rectangle;
+	rectangle.setSize({ window.getSize().x / 4.f, window.getSize().y / 4.f });
 	//rectangle.setOrigin(window.getSize().x / 2.f, window.getSize().y / 2.f);
+
+	sf::CircleShape circle(50.f);
+	circle.setFillColor(sf::Color::Transparent);
+	circle.setOutlineThickness(2.f);
 	SDL_Event event;
 	bool keepGoing = true;
 	while (window.isOpen())
@@ -32,8 +38,10 @@ int main(int, char* [])
 				window.close();
 		}
 		window.clear(sf::Color::Black);
-		window.draw(vertices);
+		//window.draw(vertices);
 		//window.draw(rectangle);
+		window.draw(circle);
+		
 		window.display();
 	}
 	SDL_Quit();

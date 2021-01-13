@@ -101,28 +101,70 @@ namespace sf
             }
         };
 
-        constexpr const char* vertexShader = R"glsl(
-            #version 100
-            attribute vec2 position;
-            attribute vec4 color;
-            uniform mat4 projection;
-            varying vec4 vertexColor;
-            void main()
+        namespace gl
+        {
+            GLenum primitive_cast(PrimitiveType type)
             {
-                gl_Position = projection * vec4(position, 0.0, 1.0);
-                vertexColor = color;
-            }
-        )glsl";
+                switch (type)
+                {
+                case Points:
+                    return GL_POINTS;
+                case Lines:
+                    return GL_LINES;
+                case LineStrip:
+                    return GL_LINE_STRIP;
+                case Triangles:
+                    return GL_TRIANGLES;
+                case TriangleStrip:
+                    return GL_TRIANGLE_STRIP;
+                case TriangleFan:
+                    return GL_TRIANGLE_FAN;
+                case Quads:
+                    return GL_QUADS;
+                }
 
-        constexpr const char * fragmentShader = R"glsl(
-            #version 100
-            precision mediump float;
-            varying vec4 vertexColor;
-            void main()
-            {
-                gl_FragColor = vertexColor;
+                return GL_NONE;
             }
-        )glsl";
+        }
+
+        constexpr const char* vertexShader = R"glsl(#version 100
+attribute vec2 position;
+attribute vec4 color;
+uniform mat4 projection;
+varying vec4 vertexColor;
+void main()
+{
+    gl_Position = projection * vec4(position, 0.0, 1.0);
+    vertexColor = color;
+}
+)glsl";
+
+        constexpr const char * fragmentShader = R"glsl(#version 100
+precision mediump float;
+varying vec4 vertexColor;
+void main()
+{
+    gl_FragColor = vertexColor;
+}
+)glsl";
+
+        constexpr const char shapeVertexShader[] = R"glsl(#version 100
+attribute vec2 position;
+uniform mat4 projection;
+void main()
+{
+    gl_Position = projection * vec4(position, 0.0, 1.0);
+}
+)glsl";
+
+        constexpr const char shapeFragmentShader[] = R"glsl(#version 100
+precision mediump float;
+uniform vec4 fillColor;
+void main()
+{
+    gl_FragColor = fillColor;
+}
+)glsl";
     }
     namespace rwops
     {
@@ -232,12 +274,36 @@ namespace sf
     const BlendMode BlendMultiply(BlendMode::DstColor, BlendMode::Zero);
     const BlendMode BlendNone(BlendMode::One, BlendMode::Zero);
 #pragma endregion BlendMode
-    // CircleShape
+#pragma region CircleShape
     CircleShape::CircleShape(float radius, std::size_t pointCount)
     {
-
+        std::vector<uint32_t> elements(pointCount + 2);
+        std::vector<Vector2f> vertices(pointCount + 1); // points + center
+        // First vertex is the center.
+        vertices[0] = { radius, radius };
+        elements[0] = 0;
+        for (size_t i = 1; i < pointCount + 1; ++i)
+        {
+            float angle = i * 2 * M_PI / pointCount - M_PI / 2;
+            float x = std::cos(angle) * radius;
+            float y = std::sin(angle) * radius;
+            vertices[i] = { radius + x, radius + y };
+            elements[i] = i;
+        }
+        elements[pointCount + 1] = 1;
+        setFilledElements(elements);
+        setFilledVertices(vertices);
+        // For the outline, we want to "loop back" to the first (or last) vertex.
+        elements.pop_back();
+        elements.front() = elements.back();
+        setOutlineElements(elements);
     }
 
+    PrimitiveType CircleShape::getType() const
+    {
+        return TriangleFan;
+    }
+#pragma endregion CircleShape
     // Default is opaque black.
     Color::Color()
         :Color(0, 0, 0, 255)
@@ -398,17 +464,24 @@ namespace sf
 
 #pragma region RectangleShape
     RectangleShape::RectangleShape(const Vector2f& size)
-        :size(size)
     {
+        setSize(size);
+        setFilledElements({ 0, 1, 2, 2, 3, 0 });
+        setOutlineElements({ 0, 1, 2, 3, 0 });
     }
 
     void RectangleShape::setSize(const Vector2f& size)
     {
         this->size = size;
+        setFilledVertices({ {0, 0}, {size.x, 0}, size, {0, size.y} });
     }
     const Vector2f& RectangleShape::getSize() const
     {
         return size;
+    }
+    PrimitiveType RectangleShape::getType() const
+    {
+        return Triangles;
     }
 #pragma endregion RectangleShape
 
@@ -452,18 +525,6 @@ namespace sf
 
     void RenderTarget::draw(const Drawable& drawable, const RenderStates& states)
     {
-        auto size = getSize();
-        auto viewport = getView().getViewport();
-        // OpenGL viewport has (0,0) at center.
-        IntRect viewportGl(
-            static_cast<int32_t>(0.5f + size.x * viewport.left),
-            static_cast<int32_t>(0.5f + size.y * viewport.top),
-            static_cast<int32_t>(0.5f + size.x * viewport.width),
-            static_cast<int32_t>(0.5f + size.y * viewport.height)
-        );
-        // flip "vertical" y axis.
-        auto top = size.y - (viewportGl.top + viewportGl.height);
-        glChecked(glViewport(viewportGl.left, top, viewportGl.width, viewportGl.height));
         drawable.draw(*this, states);
     }
     Vector2f RenderTarget::mapPixelToCoords(const Vector2i& point) const
@@ -571,7 +632,18 @@ namespace sf
     {
         if (impl)
         {
-            
+            auto size = getSize();
+            auto viewport = getView().getViewport();
+            // OpenGL viewport has (0,0) at center.
+            IntRect viewportGl(
+                static_cast<int32_t>(0.5f + size.x * viewport.left),
+                static_cast<int32_t>(0.5f + size.y * viewport.top),
+                static_cast<int32_t>(0.5f + size.x * viewport.width),
+                static_cast<int32_t>(0.5f + size.y * viewport.height)
+            );
+            // flip "vertical" y axis.
+            auto top = size.y - (viewportGl.top + viewportGl.height);
+            glChecked(glViewport(viewportGl.left, top, viewportGl.width, viewportGl.height));
             SDL_assert(impl->renderer);
             SDL_GL_SwapWindow(impl->window);
             if (impl->lastStart)
@@ -650,8 +722,7 @@ namespace sf
         SDL_ShowCursor(visible ? SDL_ENABLE : SDL_DISABLE);
     }
 #pragma endregion RenderWindow
-
-    // Shader
+#pragma region Shader
     bool Shader::isAvailable()
     {
         return SDL_GL_GetCurrentContext() != nullptr;
@@ -780,7 +851,21 @@ namespace sf
         glChecked(location = glGetUniformLocation(program, name.c_str()));
         glChecked(glUniformMatrix4fv(location, 1, GL_FALSE, glm::value_ptr(matrix)));
     }
+
+    template<>
+    void Shader::setUniform(const std::string& name, const Color& color)
+    {
+        GLint location = 0;
+        glChecked(location = glGetUniformLocation(program, name.c_str()));
+        glChecked(glUniform4f(location, color.r / 255.f, color.g / 255.f, color.b / 255.f, color.a / 255.f));
+    }
+#pragma endregion Shader
 #pragma region Shape
+    std::unique_ptr<Shader> Shape::filledShader;
+    Shape::~Shape()
+    {
+        glChecked(glDeleteBuffers(buffers.size(), buffers.data()));
+    }
     void Shape::setFillColor(const Color& color)
     {
         fill = color;
@@ -814,7 +899,88 @@ namespace sf
 
     void Shape::draw(RenderTarget& target, RenderStates states) const
     {
-        throw not_implemented();
+        if (!filledShader)
+        {
+            filledShader = std::make_unique<Shader>();
+            sf::MemoryInputStream vertexShaderStream, fragmentShaderStream;
+            vertexShaderStream.open(shapeVertexShader, strlen(shapeVertexShader) + 1);
+            fragmentShaderStream.open(shapeFragmentShader, strlen(shapeFragmentShader) + 1);
+            filledShader->loadFromStream(vertexShaderStream, fragmentShaderStream);
+        }
+
+        glm::mat4 projection = glm::ortho(0.f, float(target.getSize().x), float(target.getSize().y), 0.f, -1.f, 1.f);
+        glm::mat4 view = glm::identity<glm::mat4>();
+
+        glChecked(glBindBuffer(GL_ARRAY_BUFFER, buffers[0]));
+
+        // Filled shape.
+        if (elementCount > 0)
+        {
+            glChecked(glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, buffers[1]));
+            ScopedShader guard(*filledShader);
+            auto posAttrib = filledShader->attribute("position");
+            filledShader->setUniform("projection", projection * view);
+            filledShader->setUniform("fillColor", fill);
+            glChecked(glEnableVertexAttribArray(posAttrib));
+            glChecked(glVertexAttribPointer(posAttrib, 2, GL_FLOAT, GL_FALSE, sizeof(Vector2f), (GLvoid*)0));
+            glChecked(glDrawElements(gl::primitive_cast(getType()), elementCount, GL_UNSIGNED_INT, (GLvoid*)0));
+            // outline
+            if (outlineElementCount > 0)
+            {
+                // setup state.
+                auto smoothed = false;
+                glChecked(smoothed = glIsEnabled(GL_LINE_SMOOTH));
+                if (!smoothed)
+                    glChecked(glEnable(GL_LINE_SMOOTH));
+                GLfloat currentWidth = 0.f;
+                glChecked(glGetFloatv(GL_LINE_WIDTH, &currentWidth));
+                glChecked(glLineWidth(outlineThickness));
+                glChecked(glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, buffers[2]));
+                filledShader->setUniform("fillColor", outline);
+                glChecked(glDrawElements(GL_LINE_STRIP, outlineElementCount, GL_UNSIGNED_INT, (GLvoid*)0));
+                // cleanup state
+                glChecked(glLineWidth(currentWidth));
+                if (!smoothed)
+                    glChecked(glDisable(GL_LINE_SMOOTH));
+            }
+            glChecked(glDisableVertexAttribArray(posAttrib));
+        }
+    }
+
+    Shape::Shape()
+    {
+        glChecked(glGenBuffers(buffers.size(), buffers.data()));
+    }
+    void Shape::setFilledElements(const std::vector<uint32_t>& elements)
+    {
+        GLint currentEbo = 0;
+        glChecked(glGetIntegerv(GL_ELEMENT_ARRAY_BUFFER_BINDING, &currentEbo));
+        // update our EBO.
+        glChecked(glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, buffers[1]));
+        glChecked(glBufferData(GL_ELEMENT_ARRAY_BUFFER, elements.size() * sizeof(decltype(elements[0])), elements.data(), GL_STATIC_DRAW));
+        glChecked(glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, currentEbo));
+        elementCount = elements.size();
+    }
+
+    void Shape::setFilledVertices(const std::vector<Vector2f>& vertices)
+    {
+        GLint currentVbo = 0;
+        glChecked(glGetIntegerv(GL_ARRAY_BUFFER_BINDING, &currentVbo));
+        // update our VBO.
+        glChecked(glBindBuffer(GL_ARRAY_BUFFER, buffers[0]));
+        glChecked(glBufferData(GL_ARRAY_BUFFER, vertices.size() * sizeof(decltype(vertices[0])), vertices.data(), GL_STATIC_DRAW));
+        glChecked(glBindBuffer(GL_ARRAY_BUFFER, currentVbo));
+    }
+
+    void Shape::setOutlineElements(const std::vector<uint32_t>& elements)
+    {
+        GLint currentEbo = 0;
+        glChecked(glGetIntegerv(GL_ELEMENT_ARRAY_BUFFER_BINDING, &currentEbo));
+        // update our outline VBO.
+        glChecked(glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, buffers[2]));
+        glChecked(glBufferData(GL_ELEMENT_ARRAY_BUFFER, elements.size() * sizeof(decltype(elements[0])), elements.data(), GL_STATIC_DRAW));
+        glChecked(glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, currentEbo));
+        outlineElementCount = elements.size();
     }
 #pragma endregion Shape
 #pragma region Sprite
@@ -956,43 +1122,20 @@ namespace sf
 #pragma endregion Vertex
 
 #pragma region VertexArray
-    namespace gl
-    {
-        GLenum primitive_cast(PrimitiveType type)
-        {
-            switch (type)
-            {
-            case Points:
-                return GL_POINTS;
-            case Lines:
-                return GL_LINES;
-            case LineStrip:
-                return GL_LINE_STRIP;
-            case Triangles:
-                return GL_TRIANGLES;
-            case TriangleStrip:
-                return GL_TRIANGLE_STRIP;
-            case TriangleFan:
-                return GL_TRIANGLE_FAN;
-            case Quads:
-                return GL_QUADS;
-            }
-
-            return GL_NONE;
-        }
-    }
     VertexArray::VertexArray(PrimitiveType type, std::size_t vertexCount)
         :vertices(vertexCount),
         type{gl::primitive_cast(type)}
     {
-        glChecked(glGenBuffers(1, &vbo));
+        glChecked(glGenBuffers(2, buffers.data()));
     }
     VertexArray::~VertexArray()
     {
-        glChecked(glDeleteBuffers(1, &vbo));
+        glChecked(glDeleteBuffers(2, buffers.data()));
     }
     Vertex& VertexArray::operator [](std::size_t index)
     {
+        // assume modify operation.
+        dirty = true;
         return vertices[index];
     }
     const Vertex& VertexArray::operator [](std::size_t index) const
@@ -1005,25 +1148,48 @@ namespace sf
     }
     void VertexArray::draw(RenderTarget&target, RenderStates) const
     {
-        glChecked(glBindBuffer(GL_ARRAY_BUFFER, vbo));
-        glChecked(glBufferData(GL_ARRAY_BUFFER, vertices.size() * sizeof(decltype(vertices)::value_type), vertices.data(), GL_STATIC_DRAW));
+        glChecked(glBindBuffer(GL_ARRAY_BUFFER, buffers[0]));
+        
+        if (!elements.empty())
+        {
+            glChecked(glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, buffers[1]));
+        }
 
-        float ratio = target.getSize().x / float(target.getSize().y);
-        auto viewSize = target.getView().getSize();
-        auto viewCenter = target.getView().getCenter();
+        if (dirty)
+        {
+            glChecked(glBufferData(GL_ARRAY_BUFFER, vertices.size() * sizeof(decltype(vertices)::value_type), vertices.data(), GL_STATIC_DRAW));
+            if (!elements.empty())
+            {
+                glChecked(glBufferData(GL_ELEMENT_ARRAY_BUFFER, elements.size() * sizeof(decltype(elements)::value_type), elements.data(), GL_STATIC_DRAW));
+            }
+            dirty = false;
+        }
         glm::mat4 projection = glm::ortho(0.f, float(target.getSize().x), float(target.getSize().y), 0.f, -1.f, 1.f);
-        glm::mat4 view = glm::mat4();// glm::lookAt(glm::vec3(viewCenter.x, viewCenter.y, -200), glm::vec3(viewCenter.x, viewCenter.y, 0), glm::vec3(0, 0, 1));
+        glm::mat4 view = glm::identity<glm::mat4>();
         ScopedShader shader(DefaultShader);
         auto posAttrib = DefaultShader.attribute("position");
         auto colorAttrib = DefaultShader.attribute("color");
-        DefaultShader.setUniform("projection", projection);
+        DefaultShader.setUniform("projection", projection * view);
         glChecked(glEnableVertexAttribArray(posAttrib));
         glChecked(glEnableVertexAttribArray(colorAttrib));
         glChecked(glVertexAttribPointer(posAttrib, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex), (GLvoid*)0));
         glChecked(glVertexAttribPointer(colorAttrib, 4, GL_UNSIGNED_BYTE, GL_TRUE, sizeof(Vertex), (GLvoid*)sizeof(Vector2f)));
-        glDrawArrays(type, 0, vertices.size());
+        if (!elements.empty())
+        {
+            glDrawElements(type, elements.size(), GL_UNSIGNED_INT, (GLvoid*)0);
+        }
+        else
+        {
+            glDrawArrays(type, 0, vertices.size());
+        }
         glChecked(glDisableVertexAttribArray(colorAttrib));
         glChecked(glDisableVertexAttribArray(posAttrib));
+    }
+
+    void VertexArray::setElements(std::vector<uint32_t>&& elements)
+    {
+        this->elements = std::move(elements);
+        dirty = true;
     }
 #pragma endregion VertexArray
 #pragma region View
