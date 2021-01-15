@@ -29,7 +29,7 @@ int main(int, char* [])
 
 	sf::CircleShape circle(50.f);
 	auto semiRed = sf::Color::Red;
-	semiRed.a = 10;
+	semiRed.a = 127;
 	circle.setFillColor(semiRed);
 	circle.setOutlineThickness(2.f);
 	circle.setPosition({ window.getSize().x - 100.f, 0.f });

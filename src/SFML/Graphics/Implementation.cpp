@@ -104,7 +104,7 @@ namespace sf
 
         namespace gl
         {
-            GLenum primitive_cast(PrimitiveType type)
+            constexpr GLenum primitive_cast(PrimitiveType type)
             {
                 switch (type)
                 {
@@ -126,6 +126,49 @@ namespace sf
 
                 return GL_NONE;
             }
+
+            constexpr GLenum blendfactor_cast(BlendMode::Factor factor)
+            {
+                switch (factor)
+                {
+                case BlendMode::Zero:
+                    return GL_ZERO;
+                case BlendMode::One:
+                    return GL_ONE;
+                case BlendMode::SrcColor:
+                    return GL_SRC_COLOR;
+                case BlendMode::SrcAlpha:
+                    return GL_SRC_ALPHA;
+                case BlendMode::OneMinusSrcAlpha:
+                    return GL_ONE_MINUS_SRC_ALPHA;
+                case BlendMode::OneMinusSrcColor:
+                    return GL_ONE_MINUS_SRC_COLOR;
+                case BlendMode::DstColor:
+                    return GL_DST_COLOR;
+                case BlendMode::OneMinusDstColor:
+                    return GL_ONE_MINUS_DST_COLOR;
+                case BlendMode::DstAlpha:
+                    return GL_DST_ALPHA;
+                case BlendMode::OneMinusDstAlpha:
+                    return GL_ONE_MINUS_DST_ALPHA;
+                }
+
+                return GL_INVALID_ENUM;
+            }
+
+            constexpr GLenum blendequation_cast(BlendMode::Equation equation)
+            {
+                switch (equation)
+                {
+                case BlendMode::Add:
+                    return GL_FUNC_ADD;
+                case BlendMode::Subtract:
+                    return GL_FUNC_SUBTRACT;
+                case BlendMode::ReverseSubtract:
+                    return GL_FUNC_REVERSE_SUBTRACT;
+                }
+                return GL_INVALID_ENUM;
+            }
         }
 
         constexpr const char* vertexShader = R"glsl(#version 100
@@ -140,7 +183,7 @@ void main()
 }
 )glsl";
 
-        constexpr const char * fragmentShader = R"glsl(#version 100
+        constexpr const char* fragmentShader = R"glsl(#version 100
 precision mediump float;
 varying vec4 vertexColor;
 void main()
@@ -234,7 +277,7 @@ void main()
         {}
     };
 #pragma region BlendMode
-	// BlendMode
+    // BlendMode
     BlendMode::BlendMode(Factor sourceFactor, Factor destinationFactor, Equation blendEquation)
         :BlendMode(sourceFactor, destinationFactor, blendEquation, sourceFactor, destinationFactor, blendEquation)
     {
@@ -244,16 +287,14 @@ void main()
     BlendMode::BlendMode(Factor colorSourceFactor, Factor colorDestinationFactor,
         Equation colorBlendEquation, Factor alphaSourceFactor,
         Factor alphaDestinationFactor, Equation alphaBlendEquation)
-        : sdlObject(SDL_ComposeCustomBlendMode(
-            factorAsSDL(colorSourceFactor), factorAsSDL(colorDestinationFactor), equationAsSDL(colorBlendEquation),
-            factorAsSDL(alphaSourceFactor), factorAsSDL(alphaDestinationFactor), equationAsSDL(alphaBlendEquation)
-        ))
+        : color{ colorSourceFactor, colorDestinationFactor, colorBlendEquation }
+        , alpha{ alphaSourceFactor, alphaDestinationFactor, alphaBlendEquation }
     {
 
     }
 
     BlendMode::BlendMode()
-        :sdlObject(SDL_BLENDMODE_BLEND)
+        :BlendMode(SrcAlpha, OneMinusSrcAlpha, Add, One, OneMinusSrcAlpha, Add)
     {
 
     }
@@ -285,11 +326,11 @@ void main()
         elements[0] = 0;
         for (size_t i = 1; i < pointCount + 1; ++i)
         {
-            float angle = i * 2 * M_PI / pointCount - M_PI / 2;
+            float angle = i * 2 * float(M_PI) / pointCount - float(M_PI) / 2;
             float x = std::cos(angle) * radius;
             float y = std::sin(angle) * radius;
             vertices[i] = { radius + x, radius + y };
-            elements[i] = i;
+            elements[i] = static_cast<uint32_t>(i);
         }
         elements[pointCount + 1] = 1;
         setFilledElements(elements);
@@ -384,7 +425,7 @@ void main()
     float Font::getLineSpacing(uint32_t characterSize) const
     {
         SDL_assert(sdlObject);
-        return TTF_FontLineSkip(sdlObject);
+        return float(TTF_FontLineSkip(sdlObject));
     }
 
     const Glyph& Font::getGlyph(Uint32 codePoint, uint32_t characterSize, bool bold, float outlineThickness) const
@@ -526,6 +567,15 @@ void main()
 
     void RenderTarget::draw(const Drawable& drawable, const RenderStates& states)
     {
+        glChecked(glEnable(GL_BLEND));
+        glChecked(glBlendFuncSeparate(
+            gl::blendfactor_cast(states.blend.color.src), gl::blendfactor_cast(states.blend.color.dst),
+            gl::blendfactor_cast(states.blend.alpha.src), gl::blendfactor_cast(states.blend.alpha.dst)
+        ));
+        glChecked(glBlendEquationSeparate(
+            gl::blendequation_cast(states.blend.color.blend),
+            gl::blendequation_cast(states.blend.alpha.blend)
+        ));
         drawable.draw(*this, states);
     }
     Vector2f RenderTarget::mapPixelToCoords(const Vector2i& point) const
@@ -858,7 +908,12 @@ void main()
     {
         GLint location = 0;
         glChecked(location = glGetUniformLocation(program, name.c_str()));
-        glChecked(glUniform4f(location, color.r / 255.f, color.g / 255.f, color.b / 255.f, color.a / 255.f));
+        glm::vec4 vec;
+        vec.r = color.r / 255.f;
+        vec.g = color.g / 255.f;
+        vec.b = color.b / 255.f;
+        vec.a = color.a / 255.f;
+        glChecked(glUniform4fv(location, 1, glm::value_ptr(vec)));
     }
 #pragma endregion Shader
 #pragma region Shape
