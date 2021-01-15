@@ -6,7 +6,6 @@
 #include <SFML/System/Vector3.hpp>
 namespace sf
 {
-	
 	namespace Glsl
 	{
 		struct Vec4

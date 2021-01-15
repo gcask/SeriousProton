@@ -23,13 +23,21 @@ int main(int, char* [])
 
 	sf::RectangleShape rectangle;
 	rectangle.setSize({ window.getSize().x / 4.f, window.getSize().y / 4.f });
+	rectangle.setOrigin({ 0, rectangle.getSize().y / 2.f });
+	rectangle.setPosition({ window.getSize().x / 2.f, window.getSize().y / 2.f });
 	//rectangle.setOrigin(window.getSize().x / 2.f, window.getSize().y / 2.f);
 
 	sf::CircleShape circle(50.f);
-	circle.setFillColor(sf::Color::Transparent);
+	auto semiRed = sf::Color::Red;
+	semiRed.a = 10;
+	circle.setFillColor(semiRed);
 	circle.setOutlineThickness(2.f);
+	circle.setPosition({ window.getSize().x - 100.f, 0.f });
 	SDL_Event event;
 	bool keepGoing = true;
+	auto angle = 0.f;
+	auto scale = 1.f;
+	auto scaleDelta = 0.1f;
 	while (window.isOpen())
 	{
 		while (SDL_PollEvent(&event))
@@ -38,10 +46,17 @@ int main(int, char* [])
 				window.close();
 		}
 		window.clear(sf::Color::Black);
-		//window.draw(vertices);
-		//window.draw(rectangle);
+		window.draw(rectangle);
+		window.draw(vertices);
 		window.draw(circle);
-		
+		angle += 1;
+		scale += scaleDelta;
+		if (scale > 2.f || scale < 1.f)
+			scaleDelta *= -1;
+		if (angle > 360.f)
+			angle = 0.f;
+		rectangle.setRotation(angle);
+		rectangle.setScale(scale, scale);
 		window.display();
 	}
 	SDL_Quit();

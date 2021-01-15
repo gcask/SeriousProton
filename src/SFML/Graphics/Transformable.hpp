@@ -1,6 +1,7 @@
 #ifndef SERIOUS_PROTON_SFML_OVER_SDL_TRANSFORMABLE_HPP
 #define	SERIOUS_PROTON_SFML_OVER_SDL_TRANSFORMABLE_HPP
 #include <SFML/Graphics/Transform.hpp>
+#include <glm/ext/matrix_float4x4.hpp>
 namespace sf
 {
 	class Transformable
@@ -13,8 +14,11 @@ namespace sf
 		void setPosition(float x, float y);
 		void setPosition(const Vector2f& position);
 		void setRotation(float angle);
+	protected:
+		// non sfml.
+		glm::mat4 getTransform() const;
 	private:
-		Vector2f scale;
+		Vector2f scale = { 1.f, 1.f };
 		Vector2f origin;
 		Vector2f position;
 		float rotation = 0.f;

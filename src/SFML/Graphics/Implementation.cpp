@@ -25,6 +25,7 @@
 #include "SDL.h"
 #include "SDL_image.h"
 #include "SDL_ttf.h"
+#include <glm/ext/matrix_float4x4.hpp> // mat4x4
 #include <glm/ext/matrix_transform.hpp>
 #include <glm/ext/matrix_clip_space.hpp>
 #include <glm/gtc/type_ptr.hpp>
@@ -908,24 +909,37 @@ void main()
             filledShader->loadFromStream(vertexShaderStream, fragmentShaderStream);
         }
 
-        glm::mat4 projection = glm::ortho(0.f, float(target.getSize().x), float(target.getSize().y), 0.f, -1.f, 1.f);
-        glm::mat4 view = glm::identity<glm::mat4>();
-
-        glChecked(glBindBuffer(GL_ARRAY_BUFFER, buffers[0]));
-
-        // Filled shape.
-        if (elementCount > 0)
+        // Skip if it's an empty shape,
+        // or it's fully transparent.
+        const auto isTransparent = fill.a == 0 && outline.a == 0;
+        if (elementCount > 0 && !isTransparent)
         {
-            glChecked(glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, buffers[1]));
+            // Setup shader.
             ScopedShader guard(*filledShader);
-            auto posAttrib = filledShader->attribute("position");
+            
+            // Constants (uniforms)
+            glm::mat4 projection = glm::ortho(0.f, float(target.getSize().x), float(target.getSize().y), 0.f, -1.f, 1.f);
+            glm::mat4 view = getTransform();
             filledShader->setUniform("projection", projection * view);
             filledShader->setUniform("fillColor", fill);
+
+            // Buffers
+            glChecked(glBindBuffer(GL_ARRAY_BUFFER, buffers[0]));
+            glChecked(glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, buffers[1]));
+
+            // Vertex attributes
+            auto posAttrib = filledShader->attribute("position");
             glChecked(glEnableVertexAttribArray(posAttrib));
             glChecked(glVertexAttribPointer(posAttrib, 2, GL_FLOAT, GL_FALSE, sizeof(Vector2f), (GLvoid*)0));
-            glChecked(glDrawElements(gl::primitive_cast(getType()), elementCount, GL_UNSIGNED_INT, (GLvoid*)0));
+            // Don't draw if transparent fill.
+            if (fill.a > 0)
+            {
+                // Filled shape.
+                glChecked(glDrawElements(gl::primitive_cast(getType()), elementCount, GL_UNSIGNED_INT, (GLvoid*)0));
+            }
+
             // outline
-            if (outlineElementCount > 0)
+            if (outlineThickness > 0.f && outline.a > 0)
             {
                 // setup state.
                 auto smoothed = false;
@@ -1109,6 +1123,19 @@ void main()
     void Transformable::setRotation(float angle)
     {
         rotation = angle;
+    }
+    glm::mat4 Transformable::getTransform() const
+    {
+        // Offset center
+        auto xform = glm::translate(glm::identity<glm::mat4>(), glm::vec3(origin.x, origin.y, 0.f));
+        // Rotate
+        xform = glm::rotate(xform, glm::radians(rotation), glm::vec3(0.f, 0.f, 1.f));
+        // Scale
+        xform = glm::scale(xform, glm::vec3(scale.x, scale.y, 1.f));
+        // Undo origin change
+        xform = glm::translate(xform, -glm::vec3(origin.x, origin.y, 0.f));
+        // Apply position to transformed object
+        return glm::translate(glm::identity<glm::mat4>(), glm::vec3(position.x - origin.x, position.y - origin.y, 0.f)) * xform;
     }
 #pragma endregion Transformable
 
