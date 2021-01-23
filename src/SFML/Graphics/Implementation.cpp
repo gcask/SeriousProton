@@ -718,7 +718,6 @@ void main()
     struct RenderWindow::Impl final
     {
         SDL_Window* window = nullptr;
-        SDL_Renderer* renderer = nullptr;
         SDL_GLContext context = nullptr;
         ContextSettings settings;
         uint32_t delay = 0;
@@ -729,10 +728,6 @@ void main()
             if (context)
             {
                 SDL_GL_DeleteContext(context);
-            }
-            if (renderer)
-            {
-                SDL_DestroyRenderer(renderer);
             }
 
             if (window)
@@ -765,11 +760,10 @@ void main()
     }
     sf::Vector2u RenderWindow::getSize() const
     {
-        SDL_assert(impl && impl->renderer);
+        SDL_assert(impl && impl->window);
         int w = 0, h = 0;
-        if (!SDL_GetRendererOutputSize(impl->renderer, &w, &h))
-            return sf::Vector2u(w, h);
-        return sf::Vector2u(0u, 0u);
+        SDL_GL_GetDrawableSize(impl->window, &w, &h);
+        return sf::Vector2u(w, h);
     }
     void* RenderWindow::getSystemHandle() const
     {
@@ -791,7 +785,6 @@ void main()
             // flip "vertical" y axis.
             auto top = size.y - (viewportGl.top + viewportGl.height);
             glChecked(glViewport(viewportGl.left, top, viewportGl.width, viewportGl.height));
-            SDL_assert(impl->renderer);
             SDL_GL_SwapWindow(impl->window);
             if (impl->lastStart)
             {
@@ -830,8 +823,8 @@ void main()
         {
             flags |= SDL_WINDOW_FULLSCREEN;
         }
-
-        if (SDL_CreateWindowAndRenderer(mode.width, mode.height, flags, &impl->window, &impl->renderer))
+        impl->window = SDL_CreateWindow(title.c_str(), SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, mode.width, mode.height, flags);
+        if (!impl->window)
         {
             SDL_LogCritical(SDL_LOG_CATEGORY_APPLICATION, "Failed to create window: %s", SDL_GetError());
         }
