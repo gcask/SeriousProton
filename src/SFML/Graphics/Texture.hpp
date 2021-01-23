@@ -23,6 +23,7 @@ namespace sf
 		void setSmooth(bool smooth);
 		
 		SDL_Surface *sdlObject = nullptr;
+		uint32_t glObject = 0;
 	};
 }
 #endif // SERIOUS_PROTON_SFML_OVER_SDL_TEXTURE_HPP

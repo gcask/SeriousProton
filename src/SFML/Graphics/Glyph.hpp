@@ -3,7 +3,7 @@
 #include <SFML/Graphics/Rect.hpp>
 namespace sf
 {
-	class Glyph
+	class Glyph final
 	{
 	public:
 		float     advance = 0.f;     ///< Offset to move horizontally to the next character

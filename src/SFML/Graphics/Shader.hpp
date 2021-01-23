@@ -32,6 +32,7 @@ namespace sf
 
 		// Non-SFML
 		int32_t attribute(const char* name) const;
+		explicit operator bool() const { return program != 0; }
 	private:
 		uint32_t vertexShader = 0;
 		uint32_t fragmentShader = 0;

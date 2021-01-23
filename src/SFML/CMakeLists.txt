@@ -5,8 +5,6 @@ set(CMAKE_CXX_STANDARD 14)
 set(CMAKE_CXX_STANDARD_REQUIRED True)
 find_package(SFML COMPONENTS system REQUIRED)
 find_package(SDL2 REQUIRED)
-find_package(SDL2_image REQUIRED)
-find_package(SDL2_ttf REQUIRED)
 find_package(OpenGL REQUIRED)
 add_subdirectory(glm)
 
@@ -44,6 +42,10 @@ set(SOURCES
 	Window/WindowStyle.hpp
 
 	Window/Implementation.cpp
+
+	stb/stb_rect_pack.h
+	stb/stb_image.h
+	stb/stb_truetype.h
 )
 
 add_library(${PROJECT_NAME} STATIC ${SOURCES})
@@ -54,7 +56,7 @@ target_compile_options(${PROJECT_NAME} PUBLIC
 )
 
 target_include_directories(${PROJECT_NAME}
-	PUBLIC ${SDL2_INCLUDE_DIRS} ${SFML_INCLUDE_DIR} ${SDL2_IMAGE_INCLUDE_DIRS} ${SDL2_TTF_INCLUDE_DIRS}
+	PUBLIC ${SDL2_INCLUDE_DIRS} ${SFML_INCLUDE_DIR}
 	PRIVATE .. ${OPENGL_INCLUDE_DIR})
 target_compile_definitions(${PROJECT_NAME} PUBLIC
 	SFML_NO_DEPRECATED_WARNINGS # SFML 2.5 gives deprication warnings on a few functions we use. But we maintain 2.3 compatibility, so ignore those warnings.
@@ -62,7 +64,7 @@ target_compile_definitions(${PROJECT_NAME} PUBLIC
 	$<$<BOOL:${WIN32}>:NOMINMAX>
 )
 target_link_libraries(${PROJECT_NAME}
-	PUBLIC ${SDL2_LIBRARIES} ${SFML_LIBRARIES} glm::glm ${SDL2_IMAGE_LIBRARIES} ${SDL2_TTF_LIBRARIES}
+	PUBLIC ${SDL2_LIBRARIES} ${SFML_LIBRARIES} glm::glm
 	PRIVATE glew ${OPENGL_LIBRARIES})
 
 add_executable(SFMLTest WIN32 main.cpp)

@@ -6,16 +6,21 @@
 #include <SFML/System/Vector2.hpp>
 #include <SFML/System/String.hpp>
 
-#include "SDL_ttf.h"
+#include <memory>
+
 namespace sf
 {
-	class Font
+	class Font final
 	{
 	public:
+		Font();
+		~Font();
 		bool loadFromStream(InputStream& stream);
 		float getLineSpacing(unsigned int characterSize) const;
-		const Glyph& getGlyph(Uint32 codePoint, unsigned int characterSize, bool bold, float outlineThickness = 0) const;
-		TTF_Font* sdlObject = nullptr;
+		Glyph getGlyph(Uint32 codePoint, unsigned int characterSize, bool bold, float outlineThickness = 0) const;
+	public:
+		struct Impl;
+		std::unique_ptr<Impl> impl;
 	};
 }
 #endif // SERIOUS_PROTON_SFML_OVER_SDL_FONT_HPP

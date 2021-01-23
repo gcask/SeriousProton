@@ -7,6 +7,7 @@
 
 #include <array>
 #include <memory>
+#include <type_traits>
 #include <vector>
 namespace sf
 {
@@ -23,14 +24,28 @@ namespace sf
 		const IntRect& getTextureRect() const;
 		void draw(RenderTarget&, RenderStates) const override final;
 	protected:
+		struct VertexInfo
+		{
+			Vector2f position;
+			Vector2f texcoords;
+		};
 		Shape();
 		void setFilledElements(const std::vector<uint32_t>&);
-		void setFilledVertices(const std::vector<Vector2f>&);
+		void setVertices(const std::vector<VertexInfo>& vertices);
 		void setOutlineElements(const std::vector<uint32_t>&);
+		void setTextureCoords(const std::vector<Vector2f>&);
 	private:
+		enum class Buffer : size_t
+		{
+			Vertex = 0,
+			ElementsFilled = 1,
+			ElementsOutline = 2,
+
+			Count
+		};
+		using buffer_cast = std::underlying_type_t<Buffer>;
 		virtual PrimitiveType getType() const = 0;
-		static std::unique_ptr<Shader> filledShader;
-		std::array<uint32_t, 3> buffers = { 0, 0, 0 };
+		std::array<uint32_t, buffer_cast(Buffer::Count)> buffers{ 0 };
 		IntRect textureRect;
 		Color fill = Color::White;
 		Color outline = Color::White;
