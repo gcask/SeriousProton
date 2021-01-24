@@ -5,6 +5,8 @@
 #include <SFML/Graphics/VertexArray.hpp>
 #include <SFML/Graphics/Font.hpp>
 #include <SFML/Graphics/Text.hpp>
+#include <SFML/Graphics/Image.hpp>
+#include <SFML/Graphics/Texture.hpp>
 
 #include <SFML/System/FileInputStream.hpp>
 #include "GL/glew.h"
@@ -87,6 +89,19 @@ int main(int, char* [])
 		fontBoxes[3].setPosition(0, currentY);
 	}
 
+	// Image/Texture
+	sf::FileInputStream imageSource;
+	sf::Image image;
+	SDL_assert(image.loadFromStream(imageSource) == false);
+	SDL_assert(imageSource.open("logo_full.png"));
+	SDL_assert(image.loadFromStream(imageSource));
+
+	sf::Texture texture;
+	SDL_assert(texture.loadFromImage(image));// , { 7, 25, 31, 32 }));
+	rectangle.setTexture(&texture);
+	rectangle.setSize({ float(image.getSize().x) / 4.f, float(image.getSize().y) / 4.f });
+	rectangle.setOutlineColor(sf::Color::White);
+	rectangle.setOutlineThickness(1.f);
 	SDL_Event event;
 	bool keepGoing = true;
 	auto angle = 0.f;

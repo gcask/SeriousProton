@@ -25,12 +25,16 @@
 #include "SDL.h"
 #define STB_RECT_PACK_IMPLEMENTATION
 #define STBRP_STATIC
+#define STBRP_ASSERT(x) SDL_assert(x)
 #include "SFML/stb/stb_rect_pack.h"
 #define STB_TRUETYPE_IMPLEMENTATION
 #define STBTT_STATIC
+#define STBTT_assert(x) SDL_assert(x)
 #include "SFML/stb/stb_truetype.h"
 #define STB_IMAGE_IMPLEMENTATION
 #define STB_IMAGE_STATIC
+#define STBI_NO_STDIO
+#define STBI_ASSERT(x) SDL_assert(x)
 #include "SFML/stb/stb_image.h"
 #include <glm/ext/matrix_float4x4.hpp> // mat4x4
 #include <glm/ext/matrix_transform.hpp>
@@ -102,16 +106,46 @@ namespace sf
             explicit ScopedShader(Shader& shader)
                 :guarded{shader}
             {
+                glChecked(glGetIntegerv(GL_CURRENT_PROGRAM, &previouslyBound));
                 Shader::bind(&shader);
             }
 
             ~ScopedShader()
             {
-                Shader::bind(nullptr);
+                glChecked(glUseProgram(previouslyBound));
             }
             Shader& get() const { return guarded; }
         private:
             Shader& guarded;
+            GLint previouslyBound = 0;
+        };
+
+        struct ScopedTexture final
+        {
+            explicit ScopedTexture(const Texture* texture)
+                :guarded{ texture }
+            {
+                if (guarded)
+                {
+                    glChecked(glGetIntegerv(GL_TEXTURE_BINDING_2D, &previouslyBound));
+                    Texture::bind(guarded);
+                }
+            }
+            explicit ScopedTexture(const Texture& texture)
+                :ScopedTexture(&texture)
+            {
+            }
+            ~ScopedTexture()
+            {
+                if (guarded)
+                {
+                    glChecked(glBindTexture(GL_TEXTURE_2D, previouslyBound));
+                }
+            }
+            const Texture* get() const { return guarded; }
+        private:
+            const Texture* guarded = nullptr;
+            GLint previouslyBound = 0;
         };
 
         namespace gl
@@ -231,12 +265,60 @@ void main()
         constexpr const char shapeTexturedFragmentShader[] = R"glsl(#version 100
 precision mediump float;
 uniform sampler2D tex;
-uniform vec4 fill;
+uniform vec4 fillColor;
+uniform bool outline;
 varying vec2 fragtex;
 void main()
 {
-    gl_FragColor = texture(tex, fragtex).a * fill;
+    if (!outline)
+        gl_FragColor = texture(tex, fragtex) * fillColor;
+    else
+        gl_FragColor = fillColor;
 })glsl";
+    }
+
+    namespace sdl
+    {
+#if SDL_BYTEORDER == SDL_BIG_ENDIAN
+        constexpr uint32_t rmask = 0xff000000;
+        constexpr uint32_t gmask = 0x00ff0000;
+        constexpr uint32_t bmask = 0x0000ff00;
+        constexpr uint32_t amask = 0x000000ff;
+#else
+        constexpr uint32_t rmask = 0x000000ff;
+        constexpr uint32_t gmask = 0x0000ff00;
+        constexpr uint32_t bmask = 0x00ff0000;
+        constexpr uint32_t amask = 0xff000000;
+#endif
+
+    }
+    namespace stb
+    {
+        int read_rwops(void* user, char* data, int size)
+        {
+            auto ops = static_cast<SDL_RWops*>(user);
+            return SDL_RWread(ops, data, 1, size);
+        }
+        void skip_rwops(void* user, int n)
+        {
+            auto ops = static_cast<SDL_RWops*>(user);
+            SDL_RWseek(ops, n, RW_SEEK_CUR);
+        }
+        int eof_rwops(void* user)
+        {
+            auto ops = static_cast<SDL_RWops*>(user);
+            auto pos = SDL_RWtell(ops);
+            SDL_assert(pos != -1);
+            return pos == SDL_RWsize(ops);
+        }
+        stbi_io_callbacks forRWops()
+        {
+            stbi_io_callbacks callbacks;
+            callbacks.read = &read_rwops;
+            callbacks.skip = &skip_rwops;
+            callbacks.eof = &eof_rwops;
+            return callbacks;
+        }
     }
     namespace rwops
     {
@@ -557,37 +639,75 @@ void main()
     }
     void Image::create(unsigned int width, unsigned int height, const Color& color)
     {
-        throw not_implemented();
-    }
-    bool Image::loadFromImage(const Image& image, const IntRect& area)
-    {
-        throw not_implemented();
+        reset();
+        pixels = static_cast<uint8_t*>(STBI_MALLOC(width * height * sizeof(uint32_t)));
+        if (pixels)
+        {
+            union
+            {
+                uint32_t asRgba;
+                struct
+                {
+                    uint8_t r;
+                    uint8_t g;
+                    uint8_t b;
+                    uint8_t a;
+                } comp;
+            } fillColor;
+            fillColor.comp.r = color.r;
+            fillColor.comp.g = color.g;
+            fillColor.comp.b = color.b;
+            fillColor.comp.a = color.a;
+            const auto pixelCount = size_t(width) * height;
+            SDL_memset4(pixels, fillColor.asRgba, size_t(width)* height);
+        }
     }
     Vector2u Image::getSize() const
     {
-        if (sdlObject)
-            return Vector2u(sdlObject->w, sdlObject->h);
-
-        return Vector2u(0u, 0u);
+        return size;
     }
     bool Image::loadFromStream(InputStream& stream)
     {
-        ensureImgLoaded();
-        if (sdlObject)
+        reset();
+        auto ops = rwops::fromStream(stream);
+        if (!ops)
+            return false;
+        auto stbcallbacks = stb::forRWops();
+        int width = 0, height = 0, components = 0;
+
+        pixels = stbi_load_from_callbacks(&stbcallbacks, ops, &width, &height, nullptr, STBI_rgb_alpha);
+        if (pixels)
         {
-            SDL_FreeSurface(sdlObject);
-            sdlObject = nullptr;
+            size.x = width;
+            size.y = height;
         }
+        else
+        {
+            SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "Failed to load image: %s", stbi_failure_reason());
+        }
+        SDL_RWclose(ops);
         
-        return sdlObject != nullptr;
+        return pixels != nullptr;
     }
-    Color Image::getPixel(unsigned int x, unsigned int y) const
+    Color Image::getPixel(uint32_t x, uint32_t y) const
     {
-        SDL_assert(sdlObject != nullptr);
-        const std::lock_guard<SDL_Surface> guard(*sdlObject);
+        SDL_assert(pixels != nullptr);
         Color result;
-        auto pixel = static_cast<uint8_t*>(sdlObject->pixels) + x + y * sdlObject->pitch;
+        auto pixel = pixels + x + size_t(y) * getSize().x;
         return Color(pixel[0], pixel[1], pixel[2], pixel[3]);
+    }
+    Image::~Image()
+    {
+        stbi_image_free(pixels);
+    }
+    void Image::reset()
+    {
+        if (pixels)
+        {
+            stbi_image_free(pixels);
+            pixels = nullptr;
+            size = { 0u, 0u };
+        }
     }
 #pragma endregion Image
 
@@ -1004,6 +1124,14 @@ void main()
         vec.a = color.a / 255.f;
         glChecked(glUniform4fv(location, 1, glm::value_ptr(vec)));
     }
+
+    template<>
+    void Shader::setUniform(const std::string& name, const bool& value)
+    {
+        GLint location = -1;
+        glChecked(location = glGetUniformLocation(program, name.c_str()));
+        glChecked(glUniform1i(location, value));
+    }
 #pragma endregion Shader
 #pragma region Shape
     Shape::~Shape()
@@ -1061,15 +1189,21 @@ void main()
             texturedShader.loadFromStream(vertexShaderStream, fragmentShaderStream);
         }
 
-        if (texture)
+        // Skip if it's an empty shape,
+        // or it's fully transparent.
+        const auto isTransparent = fill.a == 0 && outline.a == 0;
+        if (elementCount > 0 && !isTransparent)
         {
             // Setup shader.
-            ScopedShader guard(texturedShader);
+            ScopedShader guard(texture ? texturedShader : filledShader);
+            ScopedTexture textureGuard{ texture };
             Texture::bind(texture);
             // Constants (uniforms)
             glm::mat4 projection = glm::ortho(0.f, float(target.getSize().x), float(target.getSize().y), 0.f, -1.f, 1.f);
             glm::mat4 view = getTransform();
             guard.get().setUniform("projection", projection * view);
+            guard.get().setUniform("fillColor", fill);
+            guard.get().setUniform("outline", false);
 
             // Buffers
             glChecked(glBindBuffer(GL_ARRAY_BUFFER, buffers[0]));
@@ -1080,37 +1214,12 @@ void main()
             glChecked(glEnableVertexAttribArray(posAttrib));
             glChecked(glVertexAttribPointer(posAttrib, 2, GL_FLOAT, GL_FALSE, sizeof(VertexInfo), (GLvoid*)0));
             auto texAttrib = guard.get().attribute("intex");
-            glChecked(glEnableVertexAttribArray(texAttrib));
-            glChecked(glVertexAttribPointer(texAttrib, 2, GL_FLOAT, GL_FALSE, sizeof(VertexInfo), (GLvoid*)sizeof(Vector2f)));
-            glChecked(glDrawElements(gl::primitive_cast(getType()), elementCount, GL_UNSIGNED_INT, (GLvoid*)0));
-            glChecked(glDisableVertexAttribArray(texAttrib));
-            glChecked(glDisableVertexAttribArray(posAttrib));
-            Texture::bind(nullptr);
-            return;
-        }
+            if (texAttrib >= 0)
+            {
+                glChecked(glEnableVertexAttribArray(texAttrib));
+                glChecked(glVertexAttribPointer(texAttrib, 2, GL_FLOAT, GL_FALSE, sizeof(VertexInfo), (GLvoid*)sizeof(Vector2f)));
 
-        // Skip if it's an empty shape,
-        // or it's fully transparent.
-        const auto isTransparent = fill.a == 0 && outline.a == 0;
-        if (elementCount > 0 && !isTransparent)
-        {
-            // Setup shader.
-            ScopedShader guard(filledShader);
-            
-            // Constants (uniforms)
-            glm::mat4 projection = glm::ortho(0.f, float(target.getSize().x), float(target.getSize().y), 0.f, -1.f, 1.f);
-            glm::mat4 view = getTransform();
-            guard.get().setUniform("projection", projection * view);
-            guard.get().setUniform("fillColor", fill);
-
-            // Buffers
-            glChecked(glBindBuffer(GL_ARRAY_BUFFER, buffers[0]));
-            glChecked(glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, buffers[1]));
-
-            // Vertex attributes
-            auto posAttrib = guard.get().attribute("position");
-            glChecked(glEnableVertexAttribArray(posAttrib));
-            glChecked(glVertexAttribPointer(posAttrib, 2, GL_FLOAT, GL_FALSE, sizeof(VertexInfo), (GLvoid*)0));
+            }
             // Don't draw if transparent fill.
             if (fill.a > 0)
             {
@@ -1119,8 +1228,9 @@ void main()
             }
 
             // outline
-            if (outlineThickness > 0.f && outline.a > 0 && !texture)
+            if (outlineThickness > 0.f && outline.a > 0)
             {
+                guard.get().setUniform("outline", true);
                 // setup state.
                 auto smoothed = false;
                 glChecked(smoothed = glIsEnabled(GL_LINE_SMOOTH));
@@ -1136,6 +1246,10 @@ void main()
                 glChecked(glLineWidth(currentWidth));
                 if (!smoothed)
                     glChecked(glDisable(GL_LINE_SMOOTH));
+            }
+            if (texAttrib >= 0)
+            {
+                glChecked(glDisableVertexAttribArray(texAttrib));
             }
             glChecked(glDisableVertexAttribArray(posAttrib));
         }
@@ -1299,8 +1413,6 @@ void main()
             glChecked(glBindBuffer(GL_ARRAY_BUFFER, currentVbo));
         }
 
-        
-        texture.sdlObject = nullptr;
         texture.glObject = atlas.tex;
     }
 
@@ -1338,7 +1450,8 @@ void main()
             glm::mat4 projection = glm::ortho(0.f, float(target.getSize().x), float(target.getSize().y), 0.f, -1.f, 1.f);
             glm::mat4 view = getTransform();
             guard.get().setUniform("projection", projection * view);
-            guard.get().setUniform("fill", fill);
+            guard.get().setUniform("fillColor", fill);
+            guard.get().setUniform("outline", false);
             // Buffers
             glChecked(glBindBuffer(GL_ARRAY_BUFFER, buffers[0]));
             glChecked(glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, buffers[1]));
@@ -1364,30 +1477,95 @@ void main()
         auto textureID = texture ? texture->glObject : GL_NONE;
         glChecked(glBindTexture(GL_TEXTURE_2D, textureID));
     }
+    Texture::Texture()
+        :repeated(false), smooth(true)
+    {
+    }
+
     Texture::~Texture()
     {
         glChecked(glDeleteTextures(1, &glObject));
-        SDL_FreeSurface(sdlObject);
     }
     Vector2u Texture::getSize() const
     {
-        if (sdlObject)
-            return Vector2u(sdlObject->w, sdlObject->h);
-        return { 0u, 0u };
+        return size;
     }
     bool Texture::loadFromImage(const Image& image, const IntRect& area)
     {
-        throw not_implemented();
-    }
-    void Texture::setRepeated(bool repeated)
-    {
-        throw not_implemented();
-    }
-    void Texture::setSmooth(bool smooth)
-    {
-        throw not_implemented();
+        if (!*this)
+        {
+            glChecked(glGenTextures(1, &glObject));
+            ScopedTexture guard{ *this };
+            updateSmooth();
+            updateRepeat();
+        }
+        ScopedTexture guard{ *this };
+        // In line with SFML implementation.
+        auto imageSize = image.getSize();
+        size_t offset = 0;
+        if (area.width == 0 || (area.height == 0) ||
+            ((area.left <= 0) && (area.top <= 0) && (area.width >= imageSize.x) && (area.height >= imageSize.y)))
+        {
+            size = image.getSize();
+            glChecked(glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, size.x, size.y, 0, GL_RGBA, GL_UNSIGNED_BYTE, image.data() + offset));
+        }
+        else
+        {
+            // Adjust the rectangle to the size of the image (SFML)
+            IntRect rectangle = area;
+            if (rectangle.left < 0) rectangle.left = 0;
+            if (rectangle.top < 0) rectangle.top = 0;
+            if (rectangle.left + rectangle.width > imageSize.x)  rectangle.width = imageSize.x - rectangle.left;
+            if (rectangle.top + rectangle.height > imageSize.y) rectangle.height = imageSize.y - rectangle.top;
+
+            size = { static_cast<uint32_t>(rectangle.width), static_cast<uint32_t>(rectangle.height) };
+            offset = 4 * (rectangle.left + (imageSize.x * rectangle.top));
+            for (int i = 0; i < rectangle.height; ++i)
+            {
+                glChecked(glTexSubImage2D(GL_TEXTURE_2D, 0, 0, i, rectangle.width, 1, GL_RGBA, GL_UNSIGNED_BYTE, image.data() + offset));
+                offset += 4 * imageSize.x;
+            }
+        }
+        updateSmooth();
+        return true;
     }
 
+    void Texture::setRepeated(bool inRepeated)
+    {
+        if (repeated != inRepeated)
+        {
+            repeated = inRepeated;
+            if (glObject)
+            {
+                ScopedTexture guard{ *this };
+                updateRepeat();
+            }
+        }
+    }
+    void Texture::setSmooth(bool inSmooth)
+    {
+        if (smooth != inSmooth)
+        {
+            smooth = inSmooth;
+            if (glObject)
+            {
+                ScopedTexture guard{ *this };
+                updateRepeat();
+            }
+        }
+        
+    }
+
+    void Texture::updateRepeat()
+    {
+        glChecked(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, repeated ? GL_REPEAT : GL_CLAMP_TO_EDGE));
+        glChecked(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, repeated ? GL_REPEAT : GL_CLAMP_TO_EDGE));
+    }
+    void Texture::updateSmooth()
+    {
+        glChecked(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, smooth ? GL_LINEAR : GL_NEAREST));
+        glChecked(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, smooth ? GL_LINEAR : GL_NEAREST));
+    }
 #pragma
     Transform::Transform()
         :matrix(glm::identity<glm::mat4>())

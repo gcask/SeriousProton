@@ -16,14 +16,21 @@ namespace sf
 		};
 
 		static void bind(const Texture* texture, CoordinateType coordinateType = Normalized);
+		Texture();
 		virtual ~Texture();
 		virtual Vector2u getSize() const;
 		bool loadFromImage(const Image& image, const IntRect& area = IntRect());
 		void setRepeated(bool repeated);
 		void setSmooth(bool smooth);
-		
-		SDL_Surface *sdlObject = nullptr;
+
+		explicit operator bool() const { return glObject != 0; }
 		uint32_t glObject = 0;
+	private:
+		void updateRepeat();
+		void updateSmooth();
+		Vector2u size;
+		uint8_t repeated : 1;
+		uint8_t smooth : 1;
 	};
 }
 #endif // SERIOUS_PROTON_SFML_OVER_SDL_TEXTURE_HPP
