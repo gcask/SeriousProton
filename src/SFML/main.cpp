@@ -97,9 +97,9 @@ int main(int, char* [])
 	SDL_assert(image.loadFromStream(imageSource));
 
 	sf::Texture texture;
-	SDL_assert(texture.loadFromImage(image));// , { 7, 25, 31, 32 }));
+	SDL_assert(texture.loadFromImage(image, { 400, 30, 200, 200 }));
 	rectangle.setTexture(&texture);
-	rectangle.setSize({ float(image.getSize().x) / 4.f, float(image.getSize().y) / 4.f });
+	rectangle.setSize({ float(texture.getSize().x) / 4.f, float(texture.getSize().y) / 4.f });
 	rectangle.setOutlineColor(sf::Color::White);
 	rectangle.setOutlineThickness(1.f);
 	SDL_Event event;

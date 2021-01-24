@@ -22,6 +22,8 @@
 #include "Vertex.hpp"
 #include "View.hpp"
 
+#include "GL/glew.h"
+
 #include "SDL.h"
 #define STB_RECT_PACK_IMPLEMENTATION
 #define STBRP_STATIC
@@ -40,7 +42,7 @@
 #include <glm/ext/matrix_transform.hpp>
 #include <glm/ext/matrix_clip_space.hpp>
 #include <glm/gtc/type_ptr.hpp>
-#include "GL/glew.h"
+
 
 #include <stdexcept>
 #include <mutex>
@@ -87,11 +89,11 @@ namespace std
 #if CHECKED_GL
 #define glChecked(call) \
     do { \
-        auto error = glGetError(); \
-        SDL_assert(error == GL_NO_ERROR); \
+        auto beforeError = glGetError(); \
+        SDL_assert(beforeError == GL_NO_ERROR); \
         call; \
-        error = glGetError(); \
-        SDL_assert(error == GL_NO_ERROR); \
+        auto afterError = glGetError(); \
+        SDL_assert(afterError == GL_NO_ERROR); \
     } while(false)
 #else
 #define glChecked(call) call
@@ -885,10 +887,6 @@ void main()
         SDL_GL_GetDrawableSize(impl->window, &w, &h);
         return sf::Vector2u(w, h);
     }
-    void* RenderWindow::getSystemHandle() const
-    {
-        throw not_implemented();
-    }
     void RenderWindow::display()
     {
         if (impl)
@@ -1519,11 +1517,13 @@ void main()
             if (rectangle.top + rectangle.height > imageSize.y) rectangle.height = imageSize.y - rectangle.top;
 
             size = { static_cast<uint32_t>(rectangle.width), static_cast<uint32_t>(rectangle.height) };
-            offset = 4 * (rectangle.left + (imageSize.x * rectangle.top));
+            // Create the (empty) texture
+            glChecked(glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, size.x, size.y, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr));
+            offset = 4 * (rectangle.left + (size_t(imageSize.x) * rectangle.top));
             for (int i = 0; i < rectangle.height; ++i)
             {
                 glChecked(glTexSubImage2D(GL_TEXTURE_2D, 0, 0, i, rectangle.width, 1, GL_RGBA, GL_UNSIGNED_BYTE, image.data() + offset));
-                offset += 4 * imageSize.x;
+                offset += 4 * size_t(imageSize.x);
             }
         }
         updateSmooth();

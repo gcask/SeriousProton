@@ -18,7 +18,6 @@ namespace sf
         void setTitle(const std::string&);
         bool isOpen() const;
         sf::Vector2u getSize() const override final;
-        void* getSystemHandle() const;
         void display();
         void close();
 
