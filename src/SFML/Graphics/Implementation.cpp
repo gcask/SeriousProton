@@ -102,54 +102,6 @@ namespace sf
 {
     namespace
     {
-        Shader DefaultShader;
-        struct ScopedShader final
-        {
-            explicit ScopedShader(Shader& shader)
-                :guarded{shader}
-            {
-                glChecked(glGetIntegerv(GL_CURRENT_PROGRAM, &previouslyBound));
-                Shader::bind(&shader);
-            }
-
-            ~ScopedShader()
-            {
-                glChecked(glUseProgram(previouslyBound));
-            }
-            Shader& get() const { return guarded; }
-        private:
-            Shader& guarded;
-            GLint previouslyBound = 0;
-        };
-
-        struct ScopedTexture final
-        {
-            explicit ScopedTexture(const Texture* texture)
-                :guarded{ texture }
-            {
-                if (guarded)
-                {
-                    glChecked(glGetIntegerv(GL_TEXTURE_BINDING_2D, &previouslyBound));
-                    Texture::bind(guarded);
-                }
-            }
-            explicit ScopedTexture(const Texture& texture)
-                :ScopedTexture(&texture)
-            {
-            }
-            ~ScopedTexture()
-            {
-                if (guarded)
-                {
-                    glChecked(glBindTexture(GL_TEXTURE_2D, previouslyBound));
-                }
-            }
-            const Texture* get() const { return guarded; }
-        private:
-            const Texture* guarded = nullptr;
-            GLint previouslyBound = 0;
-        };
-
         namespace gl
         {
             constexpr GLenum primitive_cast(PrimitiveType type)
@@ -219,7 +171,114 @@ namespace sf
             }
         }
 
-        constexpr const char* vertexShader = R"glsl(#version 100
+        Shader DefaultShader;
+        struct ScopedShader final
+        {
+            explicit ScopedShader(Shader& shader)
+                :guarded{shader}
+            {
+                glChecked(glGetIntegerv(GL_CURRENT_PROGRAM, &previouslyBound));
+                Shader::bind(&shader);
+            }
+
+            ~ScopedShader()
+            {
+                glChecked(glUseProgram(previouslyBound));
+            }
+            Shader& get() const { return guarded; }
+        private:
+            Shader& guarded;
+            GLint previouslyBound = 0;
+        };
+
+        struct ScopedTexture final
+        {
+            explicit ScopedTexture(const Texture* texture)
+                :guarded{ texture }
+            {
+                auto wantsToBind = texture ? texture->glObject : GL_NONE;
+                glChecked(glGetIntegerv(GL_TEXTURE_BINDING_2D, &previouslyBound));
+                if (previouslyBound != wantsToBind)
+                {
+                    Texture::bind(guarded);
+                }
+            }
+            explicit ScopedTexture(const Texture& texture)
+                :ScopedTexture(&texture)
+            {
+            }
+            ~ScopedTexture()
+            {
+                auto currentlyBound = guarded ? guarded->glObject : GL_NONE;
+                if (previouslyBound != currentlyBound)
+                {
+                    glChecked(glBindTexture(GL_TEXTURE_2D, previouslyBound));
+                }
+            }
+            const Texture* get() const { return guarded; }
+        private:
+            const Texture* guarded = nullptr;
+            GLint previouslyBound = 0;
+        };
+
+        struct ScopedBlending final
+        {
+        public:
+            explicit ScopedBlending(BlendMode mode)
+            {
+                glChecked(wasBlending = glIsEnabled(GL_BLEND));
+                if (!wasBlending)
+                {
+                    glChecked(glEnable(GL_BLEND));
+                }
+                else
+                {
+                    // Save state.
+                    glChecked(glGetIntegerv(GL_BLEND_SRC_RGB, &srcRGB));
+                    glChecked(glGetIntegerv(GL_BLEND_DST_RGB, &dstRGB));
+                    glChecked(glGetIntegerv(GL_BLEND_SRC_ALPHA, &srcAlpha));
+                    glChecked(glGetIntegerv(GL_BLEND_DST_ALPHA, &dstAlpha));
+                    glChecked(glGetIntegerv(GL_BLEND_EQUATION_RGB, &modeRGB));
+                    glChecked(glGetIntegerv(GL_BLEND_EQUATION_ALPHA, &modeAlpha));
+                }
+                glChecked(glBlendFuncSeparate(
+                    gl::blendfactor_cast(mode.color.src), gl::blendfactor_cast(mode.color.dst),
+                    gl::blendfactor_cast(mode.alpha.src), gl::blendfactor_cast(mode.alpha.dst)
+                ));
+                glChecked(glBlendEquationSeparate(
+                    gl::blendequation_cast(mode.color.blend),
+                    gl::blendequation_cast(mode.alpha.blend)
+                ));
+            }
+
+            ~ScopedBlending()
+            {
+                if (!wasBlending)
+                {
+                    glChecked(glDisable(GL_BLEND));
+                }
+                else
+                {
+                    glChecked(glBlendFuncSeparate(srcRGB, dstRGB, srcAlpha, dstAlpha));
+                    glChecked(glBlendEquationSeparate(modeRGB, modeAlpha));
+                }
+            }
+        private:
+            BlendMode current;
+            // Func
+            GLint srcRGB = GL_NONE;
+            GLint dstRGB = GL_NONE;
+            GLint srcAlpha = GL_NONE;
+            GLint dstAlpha = GL_NONE;
+            // Eq
+            GLint modeRGB = GL_NONE;
+            GLint modeAlpha = GL_NONE;
+            bool wasBlending = false;
+        };
+
+        
+
+        constexpr const char vertexShader[] = R"glsl(#version 100
 attribute vec2 position;
 attribute vec4 color;
 uniform mat4 projection;
@@ -230,12 +289,41 @@ void main()
     vertexColor = color;
 })glsl";
 
-        constexpr const char* fragmentShader = R"glsl(#version 100
+        constexpr const char fragmentShader[] = R"glsl(#version 100
 precision mediump float;
 varying vec4 vertexColor;
 void main()
 {
     gl_FragColor = vertexColor;
+})glsl";
+
+        constexpr const char vertexArrayVertexShader[] = R"glsl(#version 100
+attribute vec2 position;
+attribute vec2 intex;
+attribute vec4 color;
+uniform mat4 projection;
+uniform vec2 texSize;
+varying vec4 vertexColor;
+varying vec2 vertexTexCoords;
+void main()
+{
+    gl_Position = projection * vec4(position, 0.0, 1.0);
+    vertexColor = color;
+    vertexTexCoords = intex / texSize;
+})glsl";
+
+        constexpr const char vertexArrayFragmentShader[] = R"glsl(#version 100
+precision mediump float;
+varying vec4 vertexColor;
+varying vec2 vertexTexCoords;
+uniform sampler2D tex;
+uniform bool textured;
+void main()
+{
+    if (!textured)
+        gl_FragColor = vertexColor;
+    else
+        gl_FragColor = texture2D(tex, vertexTexCoords) * vertexColor;
 })glsl";
 
         constexpr const char shapeVertexShader[] = R"glsl(#version 100
@@ -256,13 +344,14 @@ void main()
 
         constexpr const char shapeTexturedVertexShader[] = R"glsl(#version 100
 uniform mat4 projection;
+uniform vec2 texSize;
 attribute vec2 position;
 attribute vec2 intex;
 varying vec2 fragtex;
 void main()
 {
     gl_Position = projection * vec4(position, 0.0, 1.0);
-    fragtex = intex;
+    fragtex = intex / texSize;
 })glsl";
         constexpr const char shapeTexturedFragmentShader[] = R"glsl(#version 100
 precision mediump float;
@@ -273,9 +362,19 @@ varying vec2 fragtex;
 void main()
 {
     if (!outline)
-        gl_FragColor = texture(tex, fragtex) * fillColor;
+        gl_FragColor = texture2D(tex, fragtex) * fillColor;
     else
         gl_FragColor = fillColor;
+})glsl";
+
+        constexpr const char textFragmentShader[] = R"glsl(#version 100
+precision mediump float;
+uniform sampler2D tex;
+uniform vec4 fillColor;
+varying vec2 fragtex;
+void main()
+{
+    gl_FragColor = texture2D(tex, fragtex).a * fillColor;
 })glsl";
     }
 
@@ -522,12 +621,9 @@ void main()
     {
         struct Atlas final
         {
-            ~Atlas()
-            {
-                glChecked(glDeleteTextures(1, &tex));
-            }
+            ~Atlas() = default;
             std::vector<stbtt_packedchar> chars;
-            uint32_t tex = 0;
+            Texture tex;
             uint32_t size = 0;
             uint32_t rangeStart = 0;
         };
@@ -550,9 +646,10 @@ void main()
                 atlas.chars.resize(256);
                 for (; atlasData.empty(); atlas.size *= 2)
                 {
-                    atlasData.resize(atlas.size * atlas.size);
+                    atlasData.resize(size_t(atlas.size) * atlas.size);
                     if (stbtt_PackBegin(&context, atlasData.data(), atlas.size, atlas.size, atlas.size, 1, nullptr))
                     {
+                        stbtt_PackSetOversampling(&context, 2, 2);
                         if (!stbtt_PackFontRange(&context, fontData.data(), 0, STBTT_POINT_SIZE(int32_t(characterSize)), 0, atlas.chars.size(), atlas.chars.data()))
                             atlasData.clear();
                         stbtt_PackEnd(&context);
@@ -567,14 +664,13 @@ void main()
 
 
                 // Upload to GPU.
-                glChecked(glGenTextures(1, &atlas.tex));
-                glChecked(glBindTexture(GL_TEXTURE_2D, atlas.tex));
+                SDL_assert(atlas.tex.glObject == GL_NONE);
+                glChecked(glGenTextures(1, &atlas.tex.glObject));
+                ScopedTexture guard{ atlas.tex };
                 glChecked(glTexImage2D(GL_TEXTURE_2D, 0, GL_ALPHA, atlas.size, atlas.size, 0, GL_ALPHA, GL_UNSIGNED_BYTE, atlasData.data()));
-                glChecked(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR));
-                glChecked(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR));
-                glChecked(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT));
-                glChecked(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT));
-                glChecked(glBindTexture(GL_TEXTURE_2D, GL_NONE));
+                atlas.tex.setSmooth(true);
+                atlas.tex.setRepeated(true);
+                atlas.tex.forceUpdate();
             }
 
             return std::get<1>(*std::get<0>(candidate));
@@ -717,8 +813,8 @@ void main()
     RectangleShape::RectangleShape(const Vector2f& size)
     {
         setSize(size);
-        setFilledElements({ 0, 1, 2, 2, 3, 0 });
-        setOutlineElements({ 0, 1, 2, 3, 0 });
+        setFilledElements(std::initializer_list<uint8_t>{ 0, 1, 2, 2, 3, 0 });
+        setOutlineElements(std::initializer_list<uint8_t>{ 0, 1, 2, 3, 0 });
     }
 
     void RectangleShape::setSize(const Vector2f& size)
@@ -756,8 +852,8 @@ void main()
         throw not_implemented();
     }
     RenderStates::RenderStates(const Texture* theTexture)
+        :texture(theTexture)
     {
-        throw not_implemented();
     }
 
 #pragma region RenderTarget
@@ -785,24 +881,51 @@ void main()
 
     void RenderTarget::draw(const Drawable& drawable, const RenderStates& states)
     {
-        glChecked(glEnable(GL_BLEND));
-        glChecked(glBlendFuncSeparate(
-            gl::blendfactor_cast(states.blend.color.src), gl::blendfactor_cast(states.blend.color.dst),
-            gl::blendfactor_cast(states.blend.alpha.src), gl::blendfactor_cast(states.blend.alpha.dst)
-        ));
-        glChecked(glBlendEquationSeparate(
-            gl::blendequation_cast(states.blend.color.blend),
-            gl::blendequation_cast(states.blend.alpha.blend)
-        ));
+        auto size = getSize();
+        auto viewport = getView().getViewport();
+        // OpenGL viewport has (0,0) at center.
+        IntRect viewportGl(
+            static_cast<int32_t>(0.5f + size.x * viewport.left),
+            static_cast<int32_t>(0.5f + size.y * viewport.top),
+            static_cast<int32_t>(0.5f + size.x * viewport.width),
+            static_cast<int32_t>(0.5f + size.y * viewport.height)
+        );
+        // flip "vertical" y axis.
+        auto top = size.y - (viewportGl.top + viewportGl.height);
+        glChecked(glViewport(viewportGl.left, top, viewportGl.width, viewportGl.height));
+        ScopedBlending blending{ states.blend };
+        ScopedTexture stateTex{ states.texture };
         drawable.draw(*this, states);
     }
     Vector2f RenderTarget::mapPixelToCoords(const Vector2i& point) const
     {
-        throw not_implemented();
+        return Vector2f(float(point.x), float(point.y));
     }
     Vector2i RenderTarget::mapCoordsToPixel(const Vector2f& point) const
     {
-        throw not_implemented();
+#if 0
+        // First, transform the point by the view matrix
+        auto normalized = point;
+        // Then convert to viewport coordinates
+        Vector2i pixel;
+        auto size = getSize();
+        auto viewport = getView().getViewport();
+        // OpenGL viewport has (0,0) at center.
+        IntRect viewportGl(
+            static_cast<int32_t>(0.5f + size.x * viewport.left),
+            static_cast<int32_t>(0.5f + size.y * viewport.top),
+            static_cast<int32_t>(0.5f + size.x * viewport.width),
+            static_cast<int32_t>(0.5f + size.y * viewport.height)
+        );
+        // flip "vertical" y axis.
+        auto top = size.y - (viewportGl.top + viewportGl.height);
+        pixel.x = static_cast<int>((normalized.x + 1.f) / 2.f * viewportGl.width + viewportGl.left);
+        pixel.y = static_cast<int>((-normalized.y + 1.f) / 2.f * viewportGl.height + top);
+
+        return pixel;
+#else
+        return Vector2i(static_cast<int32_t>(point.x), static_cast<int32_t>(point.y));
+#endif
     }
     void RenderTarget::popGLStates()
     {
@@ -891,18 +1014,6 @@ void main()
     {
         if (impl)
         {
-            auto size = getSize();
-            auto viewport = getView().getViewport();
-            // OpenGL viewport has (0,0) at center.
-            IntRect viewportGl(
-                static_cast<int32_t>(0.5f + size.x * viewport.left),
-                static_cast<int32_t>(0.5f + size.y * viewport.top),
-                static_cast<int32_t>(0.5f + size.x * viewport.width),
-                static_cast<int32_t>(0.5f + size.y * viewport.height)
-            );
-            // flip "vertical" y axis.
-            auto top = size.y - (viewportGl.top + viewportGl.height);
-            glChecked(glViewport(viewportGl.left, top, viewportGl.width, viewportGl.height));
             SDL_GL_SwapWindow(impl->window);
             if (impl->lastStart)
             {
@@ -916,16 +1027,26 @@ void main()
     }
     void RenderWindow::close()
     {
-        impl.reset();
+        impl = std::make_unique<Impl>();
     }
 
     void RenderWindow::create(VideoMode mode, const std::string& title, Uint32 style, const ContextSettings& settings)
     {
-        SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_COMPATIBILITY);
+        if (impl->window)
+        {
+            SDL_SetWindowSize(impl->window, mode.width, mode.height);
+            SDL_SetWindowResizable(impl->window, (style & Style::Resize) ? SDL_TRUE : SDL_FALSE);
+            SDL_SetWindowFullscreen(impl->window, (style & Style::Fullscreen) ? SDL_TRUE : SDL_FALSE);
+            SDL_SetWindowBordered(impl->window, (style & Style::Titlebar) ? SDL_TRUE : SDL_FALSE);
+            setTitle(title);
+            return;
+        }
+        SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
         SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, settings.majorVersion);
         SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, settings.minorVersion);
         SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, settings.depthBits);
         SDL_GL_SetAttribute(SDL_GL_STENCIL_SIZE, settings.stencilBits);
+        SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
         uint32_t flags = SDL_WINDOW_OPENGL;
         if (!(style & Style::Titlebar))
         {
@@ -960,8 +1081,8 @@ void main()
             impl->settings.majorVersion = value;
         glewInit();
         sf::MemoryInputStream vertexShaderStream, fragmentShaderStream;
-        vertexShaderStream.open(vertexShader, strlen(vertexShader) + 1);
-        fragmentShaderStream.open(fragmentShader, strlen(fragmentShader) + 1);
+        vertexShaderStream.open(shapeTexturedVertexShader, strlen(shapeTexturedVertexShader) + 1);
+        fragmentShaderStream.open(shapeTexturedFragmentShader, strlen(shapeTexturedFragmentShader) + 1);
         DefaultShader.loadFromStream(vertexShaderStream, fragmentShaderStream);
         
         setTitle(title);
@@ -978,6 +1099,23 @@ void main()
     void RenderWindow::setMouseCursorVisible(bool visible)
     {
         SDL_ShowCursor(visible ? SDL_ENABLE : SDL_DISABLE);
+    }
+    RenderWindow::Impl* RenderWindow::getImpl() const
+    {
+        return impl.get();
+    }
+    Vector2i Mouse::getPosition(const RenderWindow&)
+    {
+        Vector2i pos;
+        SDL_GetMouseState(&pos.x, &pos.y);
+        return pos;
+    }
+
+    void Mouse::setPosition(const sf::Vector2i&pos, RenderWindow&window)
+    {
+        auto pimpl = window.getImpl();
+        auto sdlWindow = pimpl ? pimpl->window : nullptr;
+        SDL_WarpMouseInWindow(sdlWindow, pos.x, pos.y);
     }
 #pragma endregion RenderWindow
 #pragma region Shader
@@ -1130,6 +1268,14 @@ void main()
         glChecked(location = glGetUniformLocation(program, name.c_str()));
         glChecked(glUniform1i(location, value));
     }
+
+    template<>
+    void Shader::setUniform(const std::string& name, const Vector2f& value)
+    {
+        GLint location = -1;
+        glChecked(location = glGetUniformLocation(program, name.c_str()));
+        glChecked(glUniform2f(location, value.x, value.y));
+    }
 #pragma endregion Shader
 #pragma region Shape
     Shape::~Shape()
@@ -1195,13 +1341,19 @@ void main()
             // Setup shader.
             ScopedShader guard(texture ? texturedShader : filledShader);
             ScopedTexture textureGuard{ texture };
-            Texture::bind(texture);
             // Constants (uniforms)
-            glm::mat4 projection = glm::ortho(0.f, float(target.getSize().x), float(target.getSize().y), 0.f, -1.f, 1.f);
+            glm::mat4 projection = glm::ortho(0.f, float(target.getView().getSize().x), float(target.getView().getSize().y), 0.f, -1.f, 1.f);
             glm::mat4 view = getTransform();
             guard.get().setUniform("projection", projection * view);
             guard.get().setUniform("fillColor", fill);
             guard.get().setUniform("outline", false);
+            Vector2f texSize{  1.f, 1.f };
+            if (texture)
+            {
+                texSize.x = float(texture->getSize().x) / getTextureRect().width;
+                texSize.y = float(texture->getSize().y) / getTextureRect().height;
+            }
+            guard.get().setUniform("texSize", texSize);
 
             // Buffers
             glChecked(glBindBuffer(GL_ARRAY_BUFFER, buffers[0]));
@@ -1222,7 +1374,7 @@ void main()
             if (fill.a > 0)
             {
                 // Filled shape.
-                glChecked(glDrawElements(gl::primitive_cast(getType()), elementCount, GL_UNSIGNED_INT, (GLvoid*)0));
+                glChecked(glDrawElements(gl::primitive_cast(getType()), elementCount, filledElementType, (GLvoid*)0));
             }
 
             // outline
@@ -1239,7 +1391,7 @@ void main()
                 glChecked(glLineWidth(outlineThickness));
                 glChecked(glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, buffers[2]));
                 guard.get().setUniform("fillColor", outline);
-                glChecked(glDrawElements(GL_LINE_STRIP, outlineElementCount, GL_UNSIGNED_INT, (GLvoid*)0));
+                glChecked(glDrawElements(GL_LINE_STRIP, outlineElementCount, outlineElementType, (GLvoid*)0));
                 // cleanup state
                 glChecked(glLineWidth(currentWidth));
                 if (!smoothed)
@@ -1257,77 +1409,106 @@ void main()
     {
         glChecked(glGenBuffers(buffers.size(), buffers.data()));
     }
-    void Shape::setFilledElements(const std::vector<uint32_t>& elements)
+    void Shape::setVertices(std::initializer_list<VertexInfo> vertices)
+    {
+        setVertices(std::begin(vertices), vertices.size());
+    }
+    void Shape::setVertices(const std::vector<VertexInfo>& vertices)
+    {
+        setVertices(vertices.data(), vertices.size());
+    }
+    void Shape::setFilledElements(const void* elements, size_t typeSize, size_t count)
     {
         GLint currentEbo = 0;
         glChecked(glGetIntegerv(GL_ELEMENT_ARRAY_BUFFER_BINDING, &currentEbo));
         // update our EBO.
         glChecked(glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, buffers[buffer_cast(Buffer::ElementsFilled)]));
-        glChecked(glBufferData(GL_ELEMENT_ARRAY_BUFFER, elements.size() * sizeof(decltype(elements[0])), elements.data(), GL_STATIC_DRAW));
+        glChecked(glBufferData(GL_ELEMENT_ARRAY_BUFFER, count * typeSize, elements, GL_STATIC_DRAW));
         glChecked(glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, currentEbo));
-        elementCount = elements.size();
+        elementCount = count;
+        switch (typeSize)
+        {
+        case 1:
+            filledElementType = GL_UNSIGNED_BYTE;
+            break;
+        case 2:
+            filledElementType = GL_UNSIGNED_SHORT;
+            break;
+        case 4:
+            filledElementType = GL_UNSIGNED_INT;
+            break;
+        default:
+            SDL_assert(false);
+        }
     }
-
-    void Shape::setVertices(const std::vector<VertexInfo>& vertices)
+    void Shape::setVertices(const VertexInfo* vertices, size_t count)
     {
         GLint currentVbo = 0;
         glChecked(glGetIntegerv(GL_ARRAY_BUFFER_BINDING, &currentVbo));
         // update our VBO.
         glChecked(glBindBuffer(GL_ARRAY_BUFFER, buffers[buffer_cast(Buffer::Vertex)]));
-        glChecked(glBufferData(GL_ARRAY_BUFFER, vertices.size() * sizeof(decltype(vertices[0])), vertices.data(), GL_STATIC_DRAW));
+        glChecked(glBufferData(GL_ARRAY_BUFFER, count * sizeof(decltype(*vertices)), vertices, GL_STATIC_DRAW));
         glChecked(glBindBuffer(GL_ARRAY_BUFFER, currentVbo));
     }
-
-    void Shape::setOutlineElements(const std::vector<uint32_t>& elements)
+    void Shape::setOutlineElements(const void* elements, size_t typeSize, size_t count)
     {
         GLint currentEbo = 0;
         glChecked(glGetIntegerv(GL_ELEMENT_ARRAY_BUFFER_BINDING, &currentEbo));
         // update our outline VBO.
         glChecked(glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, buffers[buffer_cast(Buffer::ElementsOutline)]));
-        glChecked(glBufferData(GL_ELEMENT_ARRAY_BUFFER, elements.size() * sizeof(decltype(elements[0])), elements.data(), GL_STATIC_DRAW));
+        glChecked(glBufferData(GL_ELEMENT_ARRAY_BUFFER, count * typeSize, elements, GL_STATIC_DRAW));
         glChecked(glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, currentEbo));
-        outlineElementCount = elements.size();
-    }
-
-    void Shape::setTextureCoords(const std::vector<Vector2f>& texcoords)
-    {
-
+        outlineElementCount = count;
+        switch (typeSize)
+        {
+        case 1:
+            outlineElementType = GL_UNSIGNED_BYTE;
+            break;
+        case 2:
+            outlineElementType = GL_UNSIGNED_SHORT;
+            break;
+        case 4:
+            outlineElementType = GL_UNSIGNED_INT;
+            break;
+        default:
+            SDL_assert(false);
+        }
     }
 #pragma endregion Shape
 #pragma region Sprite
-    Sprite::Sprite()
-    {
-        throw not_implemented();
-    }
+    Sprite::Sprite() = default;
     Sprite::Sprite(const Texture& texture)
     {
-        throw not_implemented();
+        setTexture(texture);
     }
     Sprite::Sprite(const Texture& texture, const IntRect& rectangle)
+        :Sprite(texture)
     {
-        throw not_implemented();
+        setTextureRect(rectangle);
     }
 
     void Sprite::setTexture(const Texture& texture, bool resetRect)
     {
-        throw not_implemented();
+        impl.setTexture(&texture, resetRect);
+        impl.setSize(Vector2f{ float(texture.getSize().x), float(texture.getSize().y) });
     }
     void Sprite::setTextureRect(const IntRect& rectangle)
     {
-        throw not_implemented();
+        impl.setTextureRect(rectangle);
     }
     const IntRect& Sprite::getTextureRect() const
     {
-        throw not_implemented();
+        return impl.getTextureRect();
     }
     void Sprite::setColor(const Color& color)
     {
-        throw not_implemented();
+        impl.setFillColor(color);
     }
 
-    void Sprite::draw(RenderTarget&, RenderStates) const
+    void Sprite::draw(RenderTarget& target, RenderStates states) const
     {
-        throw not_implemented();
+        impl.setTransform(*this);
+        impl.draw(target, states);
     }
 #pragma endregion Sprite
 #pragma region Text
@@ -1346,10 +1527,7 @@ void main()
         const auto whitespaceLength = font.getGlyph(L' ', characterSize, false).advance;
         // Fill buffers with text.
         stbtt_aligned_quad quad;
-        auto scale = stbtt_ScaleForMappingEmToPixels(&font.impl->font, characterSize);
-        int ascent = 0, descent = 0;
-        stbtt_GetFontVMetrics(&font.impl->font, &ascent, &descent, nullptr);
-        float x = 0.f, y = ascent * scale;
+        float x = 0.f, y = lineSpacing;
 
         for (auto i = 0; i < textLength; ++i)
         {
@@ -1411,7 +1589,7 @@ void main()
             glChecked(glBindBuffer(GL_ARRAY_BUFFER, currentVbo));
         }
 
-        texture.glObject = atlas.tex;
+        texture = &atlas.tex;
     }
 
     Text::~Text()
@@ -1436,20 +1614,20 @@ void main()
             {
                 sf::MemoryInputStream vertexShaderStream, fragmentShaderStream;
                 vertexShaderStream.open(shapeTexturedVertexShader, strlen(shapeTexturedVertexShader) + 1);
-                fragmentShaderStream.open(shapeTexturedFragmentShader, strlen(shapeTexturedFragmentShader) + 1);
+                fragmentShaderStream.open(textFragmentShader, strlen(textFragmentShader) + 1);
                 texturedShader.loadFromStream(vertexShaderStream, fragmentShaderStream);
             }
 
 
             // Setup shader.
             ScopedShader guard(texturedShader);
-            Texture::bind(&texture);
+            ScopedTexture textureGuard(texture);
             // Constants (uniforms)
-            glm::mat4 projection = glm::ortho(0.f, float(target.getSize().x), float(target.getSize().y), 0.f, -1.f, 1.f);
+            glm::mat4 projection = glm::ortho(0.f, float(target.getView().getSize().x), float(target.getView().getSize().y), 0.f, -1.f, 1.f);
             glm::mat4 view = getTransform();
             guard.get().setUniform("projection", projection * view);
+            guard.get().setUniform("texSize", Vector2f{ 1.f, 1.f });
             guard.get().setUniform("fillColor", fill);
-            guard.get().setUniform("outline", false);
             // Buffers
             glChecked(glBindBuffer(GL_ARRAY_BUFFER, buffers[0]));
             glChecked(glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, buffers[1]));
@@ -1465,13 +1643,13 @@ void main()
             glChecked(glDrawElements(GL_TRIANGLES, textLength * 6, GL_UNSIGNED_INT, (GLvoid*)0));
             glChecked(glDisableVertexAttribArray(texAttrib));
             glChecked(glDisableVertexAttribArray(posAttrib));
-            Texture::bind(nullptr);
         }
     }
 #pragma endregion Text
     // Texture
     void Texture::bind(const Texture* texture, CoordinateType coordinateType)
     {
+        SDL_assert(coordinateType == CoordinateType::Normalized);
         auto textureID = texture ? texture->glObject : GL_NONE;
         glChecked(glBindTexture(GL_TEXTURE_2D, textureID));
     }
@@ -1493,9 +1671,6 @@ void main()
         if (!*this)
         {
             glChecked(glGenTextures(1, &glObject));
-            ScopedTexture guard{ *this };
-            updateSmooth();
-            updateRepeat();
         }
         ScopedTexture guard{ *this };
         // In line with SFML implementation.
@@ -1526,7 +1701,7 @@ void main()
                 offset += 4 * size_t(imageSize.x);
             }
         }
-        updateSmooth();
+        forceUpdate();
         return true;
     }
 
@@ -1553,7 +1728,12 @@ void main()
                 updateRepeat();
             }
         }
-        
+    }
+
+    void Texture::forceUpdate()
+    {
+        updateRepeat();
+        updateSmooth();
     }
 
     void Texture::updateRepeat()
@@ -1575,7 +1755,11 @@ void main()
         float a10, float a11, float a12,
         float a20, float a21, float a22)
     {
-        throw not_implemented();
+        // https://stackoverflow.com/a/31721700
+        matrix[0] = glm::vec4(a00, a01, 0,  a02);
+        matrix[1] = glm::vec4(a10, a11, 0, a12);
+        matrix[2] = glm::vec4(0, 0, 1, 0);
+        matrix[3] = glm::vec4(a20, a21, 0, a22);
     }
     Vector2f Transform::transformPoint(const Vector2f& point) const
     {
@@ -1624,6 +1808,13 @@ void main()
         // Apply position to transformed object
         return glm::translate(glm::identity<glm::mat4>(), glm::vec3(position.x - origin.x, position.y - origin.y, 0.f)) * xform;
     }
+    void Transformable::setTransform(const Transformable& other)
+    {
+        scale = other.scale;
+        origin = other.origin;
+        position = other.position;
+        rotation = other.rotation;
+    }
 #pragma endregion Transformable
 
 #pragma region Vertex
@@ -1660,8 +1851,17 @@ void main()
     {
         return vertices.size();
     }
-    void VertexArray::draw(RenderTarget&target, RenderStates) const
+    void VertexArray::draw(RenderTarget&target, RenderStates states) const
     {
+        static Shader shader;
+        if (!shader)
+        {
+            sf::MemoryInputStream vertexShaderStream, fragmentShaderStream;
+            vertexShaderStream.open(vertexArrayVertexShader, strlen(vertexArrayVertexShader) + 1);
+            fragmentShaderStream.open(vertexArrayFragmentShader, strlen(vertexArrayFragmentShader) + 1);
+            shader.loadFromStream(vertexShaderStream, fragmentShaderStream);
+        }
+
         glChecked(glBindBuffer(GL_ARRAY_BUFFER, buffers[0]));
         
         if (!elements.empty())
@@ -1678,16 +1878,22 @@ void main()
             }
             dirty = false;
         }
-        glm::mat4 projection = glm::ortho(0.f, float(target.getSize().x), float(target.getSize().y), 0.f, -1.f, 1.f);
+        glm::mat4 projection = glm::ortho(0.f, float(target.getView().getSize().x), float(target.getView().getSize().y), 0.f, -1.f, 1.f);
         glm::mat4 view = glm::identity<glm::mat4>();
-        ScopedShader shader(DefaultShader);
-        auto posAttrib = DefaultShader.attribute("position");
-        auto colorAttrib = DefaultShader.attribute("color");
-        DefaultShader.setUniform("projection", projection * view);
+        ScopedShader guard(shader);
+        auto posAttrib = guard.get().attribute("position");
+        auto colorAttrib = guard.get().attribute("color");
+        auto texAttrib = guard.get().attribute("intex");
+        guard.get().setUniform("projection", projection * view);
+        guard.get().setUniform("textured", states.texture != nullptr);
+        Vector2f texSize{ states.texture ? Vector2f(states.texture->getSize()) : Vector2f{1.f, 1.f} };
+        guard.get().setUniform("texSize", texSize);
         glChecked(glEnableVertexAttribArray(posAttrib));
         glChecked(glEnableVertexAttribArray(colorAttrib));
+        glChecked(glEnableVertexAttribArray(texAttrib));
         glChecked(glVertexAttribPointer(posAttrib, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex), (GLvoid*)0));
         glChecked(glVertexAttribPointer(colorAttrib, 4, GL_UNSIGNED_BYTE, GL_TRUE, sizeof(Vertex), (GLvoid*)sizeof(Vector2f)));
+        glChecked(glVertexAttribPointer(texAttrib, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex), (GLvoid*)(sizeof(Vector2f) + sizeof(Color))));
         if (!elements.empty())
         {
             glDrawElements(type, elements.size(), GL_UNSIGNED_INT, (GLvoid*)0);
@@ -1698,6 +1904,7 @@ void main()
         }
         glChecked(glDisableVertexAttribArray(colorAttrib));
         glChecked(glDisableVertexAttribArray(posAttrib));
+        glChecked(glDisableVertexAttribArray(texAttrib));
     }
 
     void VertexArray::setElements(std::vector<uint32_t>&& elements)

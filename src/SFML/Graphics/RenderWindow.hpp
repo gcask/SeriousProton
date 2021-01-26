@@ -12,6 +12,7 @@ namespace sf
     class RenderWindow final : public sf::RenderTarget
     {
     public:
+        struct Impl;
         RenderWindow();
         ~RenderWindow();
         void setFramerateLimit(int32_t);
@@ -25,9 +26,34 @@ namespace sf
         const ContextSettings& getSettings() const;
         void setVerticalSyncEnabled(bool);
         void setMouseCursorVisible(bool);
+        Impl *getImpl() const;
     private:
-        struct Impl;
+        
         std::unique_ptr<Impl> impl;
     };
+
+    namespace Joystick
+    {
+        enum Axis
+        {
+            X = 0,    ///< The X axis
+            Y,    ///< The Y axis
+            Z,    ///< The Z axis
+            R,    ///< The R axis
+            U,    ///< The U axis
+            V,    ///< The V axis
+            PovX, ///< The X axis of the point-of-view hat
+            PovY,  ///< The Y axis of the point-of-view hat
+
+            AxisCount ///< Axis count (must be last!)
+        };
+        static constexpr uint32_t ButtonCount = 32;
+    }
+
+    namespace Mouse
+    {
+        sf::Vector2i getPosition(const RenderWindow&);
+        void setPosition(const sf::Vector2i&, RenderWindow&);
+    }
 }
 #endif // SERIOUS_PROTON_SFML_OVER_SDL_RENDERWINDOW_HPP

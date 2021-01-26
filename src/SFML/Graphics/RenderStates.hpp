@@ -15,6 +15,7 @@ namespace sf
 		RenderStates(const Texture* theTexture);
 
 		BlendMode blend;
+		const Texture* texture = nullptr;
 
 	};
 }

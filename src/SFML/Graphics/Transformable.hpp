@@ -17,6 +17,8 @@ namespace sf
 	protected:
 		// non sfml.
 		glm::mat4 getTransform() const;
+	public:
+		void setTransform(const Transformable&);
 	private:
 		Vector2f scale = { 1.f, 1.f };
 		Vector2f origin;

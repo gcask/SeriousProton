@@ -36,7 +36,7 @@ namespace sf
             Vector2f texcoords;
         };
         Vector2f extents;
-        Texture texture;
+        const Texture *texture = nullptr;
         std::array<uint32_t, 2> buffers{ 0, 0 };
         size_t textLength = 0;
         Color fill = Color::White;

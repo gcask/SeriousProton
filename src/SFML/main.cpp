@@ -7,6 +7,7 @@
 #include <SFML/Graphics/Text.hpp>
 #include <SFML/Graphics/Image.hpp>
 #include <SFML/Graphics/Texture.hpp>
+#include <SFML/Graphics/Sprite.hpp>
 
 #include <SFML/System/FileInputStream.hpp>
 #include "GL/glew.h"
@@ -98,10 +99,9 @@ int main(int, char* [])
 
 	sf::Texture texture;
 	SDL_assert(texture.loadFromImage(image, { 400, 30, 200, 200 }));
-	rectangle.setTexture(&texture);
-	rectangle.setSize({ float(texture.getSize().x) / 4.f, float(texture.getSize().y) / 4.f });
-	rectangle.setOutlineColor(sf::Color::White);
-	rectangle.setOutlineThickness(1.f);
+	sf::Sprite logo;
+	logo.setTexture(texture);
+	logo.setColor(sf::Color::Red);
 	SDL_Event event;
 	bool keepGoing = true;
 	auto angle = 0.f;
@@ -123,6 +123,7 @@ int main(int, char* [])
 		window.draw(rectangle);
 		window.draw(vertices);
 		window.draw(circle);
+		window.draw(logo);
 		angle += 1;
 		scale += scaleDelta;
 		if (scale > 2.f || scale < 1.f)

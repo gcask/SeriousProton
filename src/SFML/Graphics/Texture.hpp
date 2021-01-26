@@ -24,6 +24,7 @@ namespace sf
 		void setSmooth(bool smooth);
 
 		explicit operator bool() const { return glObject != 0; }
+		void forceUpdate();
 		uint32_t glObject = 0;
 	private:
 		void updateRepeat();

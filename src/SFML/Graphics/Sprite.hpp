@@ -5,6 +5,9 @@
 #include <SFML/Graphics/Transformable.hpp>
 #include <SFML/Graphics/Vertex.hpp>
 #include <SFML/Graphics/Rect.hpp>
+
+// Non sfml
+#include <SFML/Graphics/RectangleShape.hpp>
 namespace sf
 {
 	class Texture;
@@ -20,6 +23,8 @@ namespace sf
 		const IntRect& getTextureRect() const;
 		void setColor(const Color& color);
 		void draw(RenderTarget&, RenderStates) const override final;
+	private:
+		mutable RectangleShape impl;
 	};
 }
 #endif // SERIOUS_PROTON_SFML_OVER_SDL_SPRITE_HPP

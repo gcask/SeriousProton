@@ -8,6 +8,7 @@
 #include <array>
 #include <memory>
 #include <type_traits>
+#include <initializer_list>
 #include <vector>
 namespace sf
 {
@@ -30,10 +31,36 @@ namespace sf
 			Vector2f texcoords;
 		};
 		Shape();
-		void setFilledElements(const std::vector<uint32_t>&);
-		void setVertices(const std::vector<VertexInfo>& vertices);
-		void setOutlineElements(const std::vector<uint32_t>&);
-		void setTextureCoords(const std::vector<Vector2f>&);
+		template<typename T, std::enable_if_t<std::is_integral_v<T>, bool> = true>
+		void setFilledElements(std::initializer_list<T> elements)
+		{
+			setFilledElements(std::begin(elements), sizeof(T), elements.size());
+		}
+		void setVertices(std::initializer_list<VertexInfo>);
+		void setVertices(const std::vector<VertexInfo>&);
+
+		template<typename T, std::enable_if_t<std::is_integral_v<T>, bool> = true>
+		void setOutlineElements(std::initializer_list<T> elements)
+		{
+			setOutlineElements(std::begin(elements), sizeof(T), elements.size());
+		}
+
+		template<typename T, std::enable_if_t<std::is_integral_v<T>, bool> = true>
+		void setFilledElements(const std::vector<T>& elements)
+		{
+			setFilledElements(elements.data(), sizeof(T), elements.size());
+		}
+
+		template<typename T, std::enable_if_t<std::is_integral_v<T>, bool> = true>
+		void setOutlineElements(const std::vector<T>& elements)
+		{
+			setOutlineElements(elements.data(), sizeof(T), elements.size());
+		}
+		
+		void setVertices(const VertexInfo*, size_t);
+
+		void setFilledElements(const void*, size_t typeSize, size_t elementCount);
+		void setOutlineElements(const void*, size_t typeSize, size_t elementCount);
 	private:
 		enum class Buffer : size_t
 		{
@@ -53,6 +80,8 @@ namespace sf
 		float outlineThickness = 0.f;
 		int32_t elementCount = 0;
 		int32_t outlineElementCount = 0;
+		uint32_t filledElementType = 0;
+		uint32_t outlineElementType = 0;
 	};
 }
 #endif // SERIOUS_PROTON_SFML_OVER_SDL_SHAPE_HPP

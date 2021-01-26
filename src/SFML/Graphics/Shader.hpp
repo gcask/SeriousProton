@@ -50,5 +50,9 @@ namespace sf
 	template<>
 	void Shader::setUniform<bool>(const std::string&, const bool&);
 	extern template void Shader::setUniform(const std::string&, const bool&);
+
+	template<>
+	void Shader::setUniform<Vector2f>(const std::string&, const Vector2f&);
+	extern template void Shader::setUniform(const std::string&, const Vector2f&);
 }
 #endif // SERIOUS_PROTON_SFML_OVER_SDL_SHADER_HPP
