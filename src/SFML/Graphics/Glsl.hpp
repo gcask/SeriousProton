@@ -11,6 +11,7 @@ namespace sf
 		struct Vec4
 		{
 			Vec4(const Color&);
+			Color color;
 		};
 	}
 }

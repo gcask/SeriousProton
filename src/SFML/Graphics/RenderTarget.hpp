@@ -28,6 +28,7 @@ namespace sf
 		void popGLStates();
 		void pushGLStates();
 		SDL_Texture* sdlObject = nullptr;
+		uint32_t glObject = 0;
 	private:
 		View view;
 	};

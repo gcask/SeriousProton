@@ -170,8 +170,6 @@ namespace sf
                 return GL_INVALID_ENUM;
             }
         }
-
-        Shader DefaultShader;
         struct ScopedShader final
         {
             explicit ScopedShader(Shader& shader)
@@ -218,6 +216,37 @@ namespace sf
             const Texture* get() const { return guarded; }
         private:
             const Texture* guarded = nullptr;
+            GLint previouslyBound = 0;
+        };
+
+        struct ScopedRenderTarget final
+        {
+            explicit ScopedRenderTarget(const RenderTarget* texture)
+                :guarded{ texture }
+            {
+                auto wantsToBind = texture ? texture->glObject : GL_NONE;
+                glChecked(glGetIntegerv(GL_FRAMEBUFFER_BINDING, &previouslyBound));
+                if (previouslyBound != wantsToBind)
+                {
+                    glChecked(glBindFramebuffer(GL_FRAMEBUFFER, wantsToBind));
+                }
+            }
+
+            explicit ScopedRenderTarget(const RenderTarget& texture)
+                :ScopedRenderTarget(&texture)
+            {}
+
+            ~ScopedRenderTarget()
+            {
+                auto currentlyBound = guarded ? guarded->glObject : GL_NONE;
+                if (previouslyBound != currentlyBound)
+                {
+                    glChecked(glBindFramebuffer(GL_FRAMEBUFFER, previouslyBound));
+                }
+            }
+            const RenderTarget* get() const { return guarded; }
+        private:
+            const RenderTarget* guarded = nullptr;
             GLint previouslyBound = 0;
         };
 
@@ -344,14 +373,18 @@ void main()
 
         constexpr const char shapeTexturedVertexShader[] = R"glsl(#version 100
 uniform mat4 projection;
-uniform vec2 texSize;
+uniform vec4 texInfo;
+uniform bool texFlip;
 attribute vec2 position;
 attribute vec2 intex;
 varying vec2 fragtex;
 void main()
 {
     gl_Position = projection * vec4(position, 0.0, 1.0);
-    fragtex = intex / texSize;
+    
+    fragtex = (texInfo.xy + intex) / texInfo.zw;
+    if (texFlip)
+        fragtex.y = fragtex.y * -1.0 + 1.0;
 })glsl";
         constexpr const char shapeTexturedFragmentShader[] = R"glsl(#version 100
 precision mediump float;
@@ -374,7 +407,7 @@ uniform vec4 fillColor;
 varying vec2 fragtex;
 void main()
 {
-    gl_FragColor = texture2D(tex, fragtex).a * fillColor;
+    gl_FragColor = vec4(1.0, 1.0, 1.0, texture2D(tex, fragtex).a) * fillColor;
 })glsl";
     }
 
@@ -624,7 +657,7 @@ void main()
             ~Atlas() = default;
             std::vector<stbtt_packedchar> chars;
             Texture tex;
-            uint32_t size = 0;
+            Vector2u size = { 0, 0 };
             uint32_t rangeStart = 0;
         };
         ~Impl() = default;
@@ -641,13 +674,19 @@ void main()
                 // Pack font into texture.
                 auto& atlas = std::get<1>(*std::get<0>(candidate));
                 stbtt_pack_context context;
-                atlas.size = 32;
                 std::vector<uint8_t> atlasData;
                 atlas.chars.resize(256);
-                for (; atlasData.empty(); atlas.size *= 2)
+                auto scale = stbtt_ScaleForMappingEmToPixels(&font, STBTT_POINT_SIZE(int32_t(characterSize)));
+                int lineGap = 0, ascent = 0, descent = 0;
+                stbtt_GetFontVMetrics(&font, &ascent, &descent, &lineGap);
+                auto lineHeight = scale * (ascent - descent + lineGap);
+                auto charWidth = scale * STBTT_POINT_SIZE(int32_t(characterSize));
+                atlas.size.x = ((characterSize + 4) * 128);
+                atlas.size.y = ((characterSize + 4) * 2);
+                for (; atlasData.empty();)
                 {
-                    atlasData.resize(size_t(atlas.size) * atlas.size);
-                    if (stbtt_PackBegin(&context, atlasData.data(), atlas.size, atlas.size, atlas.size, 1, nullptr))
+                    atlasData.resize(size_t(atlas.size.x) * atlas.size.y);
+                    if (stbtt_PackBegin(&context, atlasData.data(), atlas.size.x, atlas.size.y, atlas.size.x, 1, nullptr))
                     {
                         stbtt_PackSetOversampling(&context, 2, 2);
                         if (!stbtt_PackFontRange(&context, fontData.data(), 0, STBTT_POINT_SIZE(int32_t(characterSize)), 0, atlas.chars.size(), atlas.chars.data()))
@@ -660,14 +699,14 @@ void main()
                     }
                 }
 
-                atlas.size = atlas.size / 2;
+                //atlas.size = atlas.size / 2;
 
 
                 // Upload to GPU.
                 SDL_assert(atlas.tex.glObject == GL_NONE);
                 glChecked(glGenTextures(1, &atlas.tex.glObject));
                 ScopedTexture guard{ atlas.tex };
-                glChecked(glTexImage2D(GL_TEXTURE_2D, 0, GL_ALPHA, atlas.size, atlas.size, 0, GL_ALPHA, GL_UNSIGNED_BYTE, atlasData.data()));
+                glChecked(glTexImage2D(GL_TEXTURE_2D, 0, GL_ALPHA, atlas.size.x, atlas.size.y, 0, GL_ALPHA, GL_UNSIGNED_BYTE, atlasData.data()));
                 atlas.tex.setSmooth(true);
                 atlas.tex.setRepeated(true);
                 atlas.tex.forceUpdate();
@@ -720,9 +759,9 @@ void main()
 #pragma region Glsl
     namespace Glsl
     {
-        Vec4::Vec4(const Color&)
+        Vec4::Vec4(const Color&c)
+            :color{ c }
         {
-            throw not_implemented();
         }
     }
 #pragma endregion Glsl
@@ -859,7 +898,7 @@ void main()
 #pragma region RenderTarget
     RenderTarget::~RenderTarget()
     {
-        throw not_implemented();
+        glChecked(glDeleteFramebuffers(1, &glObject));
     }
     sf::Vector2u RenderTarget::getSize() const
     {
@@ -875,12 +914,14 @@ void main()
     }
     void RenderTarget::clear(const Color& color)
     {
+        ScopedRenderTarget guard{ this };
         glClearColor(color.r / 255.f, color.g / 255.f, color.b / 255.f, color.a / 255.f);
         glClear(GL_COLOR_BUFFER_BIT);
     }
 
     void RenderTarget::draw(const Drawable& drawable, const RenderStates& states)
     {
+        ScopedRenderTarget guard{ this };
         auto size = getSize();
         auto viewport = getView().getViewport();
         // OpenGL viewport has (0,0) at center.
@@ -929,36 +970,80 @@ void main()
     }
     void RenderTarget::popGLStates()
     {
-        throw not_implemented();
+        Texture::bind(nullptr);
+        Shader::bind(nullptr);
     }
     void RenderTarget::pushGLStates()
     {
-        throw not_implemented();
+        glChecked(glDisable(GL_ALPHA_TEST));
+        glChecked(glDisable(GL_DEPTH_TEST));
     }
 #pragma endregion RenderTarget
-
-    // RenderTexture
+#pragma region RenderTexture
+    RenderTexture::RenderTexture()
+    {
+        texture.setFlipped(true);
+    }
+    RenderTexture::~RenderTexture()
+    {
+        glChecked(glDeleteRenderbuffers(1, &rbo));
+    }
     bool RenderTexture::create(unsigned int width, unsigned int height, bool depthBuffer)
     {
-        throw not_implemented();
+        if (glObject == GL_NONE)
+        {
+            glChecked(glGenFramebuffers(1, &glObject));
+            glChecked(glGenTextures(1, &texture.glObject));
+        }
+
+        ScopedRenderTarget guard{ this };
+        ScopedTexture guardTex{ texture };
+        glChecked(glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr));
+        texture.size = { width, height };
+        texture.forceUpdate();
+        glChecked(glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, texture.glObject, 0));
+        if (depthBuffer)
+        {
+            if (rbo == GL_NONE)
+            {
+                glChecked(glGenRenderbuffers(1, &rbo));
+                glChecked(glBindRenderbuffer(GL_RENDERBUFFER, rbo));
+                glChecked(glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH_COMPONENT, width, height));
+                glChecked(glBindRenderbuffer(GL_RENDERBUFFER, GL_NONE));
+            }
+
+            glChecked(glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_COMPONENT, GL_RENDERBUFFER, rbo));
+        }
+        else if (rbo != GL_NONE)
+        {
+            glChecked(glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_COMPONENT, GL_RENDERBUFFER, GL_NONE));
+        }
+
+        auto status = GL_NONE;
+        glChecked(status = glCheckFramebufferStatus(GL_FRAMEBUFFER));
+        return status == GL_FRAMEBUFFER_COMPLETE;
     }
     void RenderTexture::setRepeated(bool repeated)
     {
-        throw not_implemented();
+        texture.setRepeated(repeated);
     }
     void RenderTexture::setSmooth(bool smooth)
     {
-        throw not_implemented();
+        texture.setSmooth(smooth);
     }
     void RenderTexture::display()
     {
-        throw not_implemented();
+        // noop?
     }
     const Texture& RenderTexture::getTexture() const
     {
-        throw not_implemented();
+        return texture;
     }
-
+    sf::Vector2u RenderTexture::getSize() const
+    {
+        return texture.getSize();
+    }
+#pragma endregion RenderTexture
 #pragma region RenderWindow
     struct RenderWindow::Impl final
     {
@@ -1041,11 +1126,14 @@ void main()
             setTitle(title);
             return;
         }
-        SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
+        SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_COMPATIBILITY);//SDL_GL_CONTEXT_PROFILE_CORE | SDL_GL_CONTEXT_PROFILE_ES);
+        SDL_GL_SetAttribute(SDL_GL_CONTEXT_FLAGS, SDL_GL_CONTEXT_DEBUG_FLAG);
         SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, settings.majorVersion);
         SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, settings.minorVersion);
         SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, settings.depthBits);
         SDL_GL_SetAttribute(SDL_GL_STENCIL_SIZE, settings.stencilBits);
+        SDL_GL_SetAttribute(SDL_GL_MULTISAMPLEBUFFERS, settings.antialiasingLevel > 0 ? 1 : 0);
+        SDL_GL_SetAttribute(SDL_GL_MULTISAMPLESAMPLES, settings.antialiasingLevel);
         SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
         uint32_t flags = SDL_WINDOW_OPENGL;
         if (!(style & Style::Titlebar))
@@ -1080,11 +1168,6 @@ void main()
         if (!SDL_GL_GetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, &value))
             impl->settings.majorVersion = value;
         glewInit();
-        sf::MemoryInputStream vertexShaderStream, fragmentShaderStream;
-        vertexShaderStream.open(shapeTexturedVertexShader, strlen(shapeTexturedVertexShader) + 1);
-        fragmentShaderStream.open(shapeTexturedFragmentShader, strlen(shapeTexturedFragmentShader) + 1);
-        DefaultShader.loadFromStream(vertexShaderStream, fragmentShaderStream);
-        
         setTitle(title);
     }
     const ContextSettings& RenderWindow::getSettings() const
@@ -1130,6 +1213,16 @@ void main()
         {
             SDL_assert(shader->program != 0);
             program = shader->program;
+            for (auto i = 0; i < shader->currentTextureUnit; ++i)
+            {
+                glChecked(glActiveTexture(GL_TEXTURE0 + i));
+                glChecked(glBindTexture(GL_TEXTURE_2D, shader->textures[i]));
+            }
+            if (shader->currentTextureUnit > 1)
+            {
+                glChecked(glActiveTexture(GL_TEXTURE0));
+            }
+            shader->currentTextureUnit = 0;
         }
 
 
@@ -1178,12 +1271,13 @@ void main()
                 return false;
             }
             {
-                std::vector<char> code(length);
-                if (SDL_RWread(sdlStream.get(), code.data(), code.size(), 1) == 0)
+                std::vector<char> code(length + 1);
+                if (SDL_RWread(sdlStream.get(), code.data(), code.size() - 1, 1) == 0)
                 {
                     SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "Empty or error shader stream: %s", SDL_GetError());
                     return false;
                 }
+                code[length] = '\0';
 
                 const char* sources[1] = { code.data() };
                 glChecked(glShaderSource(shader, 1, sources, nullptr));
@@ -1241,40 +1335,85 @@ void main()
     }
 
     template<>
-    void Shader::setUniform(const std::string& name, const glm::mat4&matrix)
+    void Shader::setUniform(const std::string& name, const bool& value)
     {
         GLint location = 0;
         glChecked(location = glGetUniformLocation(program, name.c_str()));
-        glChecked(glUniformMatrix4fv(location, 1, GL_FALSE, glm::value_ptr(matrix)));
+        glChecked(glUniform1i(location, value));
     }
-
+    template<>
+    void Shader::setUniform(const std::string& name, const float& value)
+    {
+        GLint location = 0;
+        glChecked(location = glGetUniformLocation(program, name.c_str()));
+        glChecked(glUniform1f(location, value));
+    }
+    // SFML
     template<>
     void Shader::setUniform(const std::string& name, const Color& color)
     {
-        GLint location = 0;
-        glChecked(location = glGetUniformLocation(program, name.c_str()));
         glm::vec4 vec;
         vec.r = color.r / 255.f;
         vec.g = color.g / 255.f;
         vec.b = color.b / 255.f;
         vec.a = color.a / 255.f;
-        glChecked(glUniform4fv(location, 1, glm::value_ptr(vec)));
+        setUniform(name, vec);
     }
-
-    template<>
-    void Shader::setUniform(const std::string& name, const bool& value)
-    {
-        GLint location = -1;
-        glChecked(location = glGetUniformLocation(program, name.c_str()));
-        glChecked(glUniform1i(location, value));
-    }
-
     template<>
     void Shader::setUniform(const std::string& name, const Vector2f& value)
     {
         GLint location = -1;
         glChecked(location = glGetUniformLocation(program, name.c_str()));
         glChecked(glUniform2f(location, value.x, value.y));
+    }
+    template<>
+    void Shader::setUniform(const std::string& name, const Vector3f& value)
+    {
+        GLint location = -1;
+        glChecked(location = glGetUniformLocation(program, name.c_str()));
+        glChecked(glUniform3f(location, value.x, value.y, value.z));
+    }
+    template<>
+    void Shader::setUniform(const std::string& name, const Texture& value)
+    {
+        glChecked(glActiveTexture(GL_TEXTURE0 + currentTextureUnit));
+        Texture::bind(&value);
+        textures[currentTextureUnit++] = value.glObject;
+        glChecked(glActiveTexture(GL_TEXTURE0));
+    }
+    template<>
+    void Shader::setUniform(const std::string& name, const Glsl::Vec4& value)
+    {
+        setUniform(name, value.color);
+    }
+    // glm
+    template<>
+    void Shader::setUniform(const std::string& name, const glm::mat4&matrix)
+    {
+        GLint location = 0;
+        glChecked(location = glGetUniformLocation(program, name.c_str()));
+        glChecked(glUniformMatrix4fv(location, 1, GL_FALSE, glm::value_ptr(matrix)));
+    }
+    template<>
+    void Shader::setUniform(const std::string& name, const glm::vec2& vector)
+    {
+        GLint location = 0;
+        glChecked(location = glGetUniformLocation(program, name.c_str()));
+        glChecked(glUniform2fv(location, 1, glm::value_ptr(vector)));
+    }
+    template<>
+    void Shader::setUniform(const std::string& name, const glm::vec3& vector)
+    {
+        GLint location = 0;
+        glChecked(location = glGetUniformLocation(program, name.c_str()));
+        glChecked(glUniform3fv(location, 1, glm::value_ptr(vector)));
+    }
+    template<>
+    void Shader::setUniform(const std::string& name, const glm::vec4& vector)
+    {
+        GLint location = 0;
+        glChecked(location = glGetUniformLocation(program, name.c_str()));
+        glChecked(glUniform4fv(location, 1, glm::value_ptr(vector)));
     }
 #pragma endregion Shader
 #pragma region Shape
@@ -1342,18 +1481,27 @@ void main()
             ScopedShader guard(texture ? texturedShader : filledShader);
             ScopedTexture textureGuard{ texture };
             // Constants (uniforms)
-            glm::mat4 projection = glm::ortho(0.f, float(target.getView().getSize().x), float(target.getView().getSize().y), 0.f, -1.f, 1.f);
-            glm::mat4 view = getTransform();
-            guard.get().setUniform("projection", projection * view);
+            const auto& view = target.getView();
+            auto topLeft = view.getCenter() - view.getSize() / 2.f;
+            auto bottomRight = view.getCenter() + view.getSize() / 2.f;
+            auto projection = glm::ortho(
+                topLeft.x, bottomRight.x, bottomRight.y, topLeft.y
+            );
+           // glm::mat4 projection = glm::ortho(0.f, float(target.getView().getSize().x), float(target.getView().getSize().y), 0.f, -1.f, 1.f);
+            glm::mat4 model = getTransform();
+            guard.get().setUniform("projection", projection * model);
             guard.get().setUniform("fillColor", fill);
             guard.get().setUniform("outline", false);
-            Vector2f texSize{  1.f, 1.f };
+            glm::vec4 texInfo{ 0.f, 0.f, 1.f, 1.f };
             if (texture)
             {
-                texSize.x = float(texture->getSize().x) / getTextureRect().width;
-                texSize.y = float(texture->getSize().y) / getTextureRect().height;
+                texInfo.x = getTextureRect().left;
+                texInfo.y = getTextureRect().top;
+                texInfo.z = float(texture->getSize().x) / getTextureRect().width;
+                texInfo.w = float(texture->getSize().y) / getTextureRect().height;
             }
-            guard.get().setUniform("texSize", texSize);
+            guard.get().setUniform("texFlip", texture ? texture->isFlipped() : false);
+            guard.get().setUniform("texInfo", texInfo);
 
             // Buffers
             glChecked(glBindBuffer(GL_ARRAY_BUFFER, buffers[0]));
@@ -1490,11 +1638,12 @@ void main()
     void Sprite::setTexture(const Texture& texture, bool resetRect)
     {
         impl.setTexture(&texture, resetRect);
-        impl.setSize(Vector2f{ float(texture.getSize().x), float(texture.getSize().y) });
+        impl.setSize(Vector2f{ float(getTextureRect().width), float(getTextureRect().height) });
     }
     void Sprite::setTextureRect(const IntRect& rectangle)
     {
         impl.setTextureRect(rectangle);
+        impl.setSize(Vector2f{ float(getTextureRect().width), float(getTextureRect().height) });
     }
     const IntRect& Sprite::getTextureRect() const
     {
@@ -1552,7 +1701,7 @@ void main()
                 x += whitespaceLength;
                 continue;
             }
-            stbtt_GetPackedQuad(atlas.chars.data(), atlas.size, atlas.size, character, &x, &y, &quad, 1);
+            stbtt_GetPackedQuad(atlas.chars.data(), atlas.size.x, atlas.size.y, character, &x, &y, &quad, 1);
             
             const auto quadIndex = vertices.size() / 4;
             vertices.emplace_back(VertexInfo{ Vector2f{ quad.x0, quad.y0 }, Vector2f{quad.s0, quad.t0} });
@@ -1623,10 +1772,17 @@ void main()
             ScopedShader guard(texturedShader);
             ScopedTexture textureGuard(texture);
             // Constants (uniforms)
-            glm::mat4 projection = glm::ortho(0.f, float(target.getView().getSize().x), float(target.getView().getSize().y), 0.f, -1.f, 1.f);
-            glm::mat4 view = getTransform();
-            guard.get().setUniform("projection", projection * view);
-            guard.get().setUniform("texSize", Vector2f{ 1.f, 1.f });
+            const auto& view = target.getView();
+            auto projection = glm::ortho(
+                view.getCenter().x - view.getSize().x / 2.f,
+                view.getCenter().x + view.getSize().x / 2.f,
+                view.getCenter().y + view.getSize().y / 2.f,
+                view.getCenter().y - view.getSize().y / 2.f);
+            //glm::mat4 projection = glm::ortho(0.f, float(target.getView().getSize().x), float(target.getView().getSize().y), 0.f, -1.f, 1.f);
+            glm::mat4 model = getTransform();
+            guard.get().setUniform("projection", projection * model);
+            guard.get().setUniform("texInfo", glm::vec4{ 0.f, 0.f, 1.f, 1.f });
+            guard.get().setUniform("texFlip", false);
             guard.get().setUniform("fillColor", fill);
             // Buffers
             glChecked(glBindBuffer(GL_ARRAY_BUFFER, buffers[0]));
@@ -1652,9 +1808,41 @@ void main()
         SDL_assert(coordinateType == CoordinateType::Normalized);
         auto textureID = texture ? texture->glObject : GL_NONE;
         glChecked(glBindTexture(GL_TEXTURE_2D, textureID));
+        if (textureID)
+        {
+            // SFML compat.
+            if ((coordinateType == Pixels) || texture->flipped)
+            {
+                GLfloat matrix[16] = { 1.f, 0.f, 0.f, 0.f,
+                                      0.f, 1.f, 0.f, 0.f,
+                                      0.f, 0.f, 1.f, 0.f,
+                                      0.f, 0.f, 0.f, 1.f };
+
+                // If non-normalized coordinates (= pixels) are requested, we need to
+                // setup scale factors that convert the range [0 .. size] to [0 .. 1]
+                if (coordinateType == Pixels)
+                {
+                    matrix[0] = 1.f / texture->getSize().x;
+                    matrix[5] = 1.f / texture->getSize().y;
+                }
+
+                // If pixels are flipped we must invert the Y axis
+                if (texture->flipped)
+                {
+                    matrix[5] = -matrix[5];
+                    matrix[13] = static_cast<float>(texture->getSize().y) / texture->getSize().y;
+                }
+
+                // Load the matrix
+                glChecked(glMatrixMode(GL_TEXTURE));
+                glChecked(glLoadMatrixf(matrix));
+                // Go back to model-view mode (sf::RenderTarget relies on it)
+                glChecked(glMatrixMode(GL_MODELVIEW));
+            }
+        }
     }
     Texture::Texture()
-        :repeated(false), smooth(true)
+        :repeated(false), smooth(true), flipped(false)
     {
     }
 
@@ -1728,6 +1916,14 @@ void main()
                 updateRepeat();
             }
         }
+    }
+    void Texture::setFlipped(bool flipped)
+    {
+        this->flipped = flipped;
+    }
+    bool Texture::isFlipped() const
+    {
+        return flipped;
     }
 
     void Texture::forceUpdate()
@@ -1820,7 +2016,7 @@ void main()
 #pragma region Vertex
     Vertex::Vertex()
         :position{0.f, 0.f}
-        ,color{Color::Black}
+        ,color{Color::White}
         ,texCoords{0.f, 0.f}
     {
     }
@@ -1878,16 +2074,22 @@ void main()
             }
             dirty = false;
         }
-        glm::mat4 projection = glm::ortho(0.f, float(target.getView().getSize().x), float(target.getView().getSize().y), 0.f, -1.f, 1.f);
-        glm::mat4 view = glm::identity<glm::mat4>();
+        const auto& view = target.getView();
+        auto projection = glm::ortho(
+            view.getCenter().x - view.getSize().x / 2.f,
+            view.getCenter().x + view.getSize().x / 2.f,
+            view.getCenter().y + view.getSize().y / 2.f,
+            view.getCenter().y - view.getSize().y / 2.f);
+        //glm::mat4 projection = glm::ortho(0.f, float(target.getView().getSize().x), float(target.getView().getSize().y), 0.f, -1.f, 1.f);
         ScopedShader guard(shader);
         auto posAttrib = guard.get().attribute("position");
         auto colorAttrib = guard.get().attribute("color");
         auto texAttrib = guard.get().attribute("intex");
-        guard.get().setUniform("projection", projection * view);
+        guard.get().setUniform("projection", projection);
         guard.get().setUniform("textured", states.texture != nullptr);
         Vector2f texSize{ states.texture ? Vector2f(states.texture->getSize()) : Vector2f{1.f, 1.f} };
         guard.get().setUniform("texSize", texSize);
+        guard.get().setUniform("texFlip", states.texture ? states.texture->isFlipped() : false);
         glChecked(glEnableVertexAttribArray(posAttrib));
         glChecked(glEnableVertexAttribArray(colorAttrib));
         glChecked(glEnableVertexAttribArray(texAttrib));

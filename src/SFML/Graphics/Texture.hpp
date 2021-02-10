@@ -22,6 +22,8 @@ namespace sf
 		bool loadFromImage(const Image& image, const IntRect& area = IntRect());
 		void setRepeated(bool repeated);
 		void setSmooth(bool smooth);
+		void setFlipped(bool flipped);
+		bool isFlipped() const;
 
 		explicit operator bool() const { return glObject != 0; }
 		void forceUpdate();
@@ -32,6 +34,9 @@ namespace sf
 		Vector2u size;
 		uint8_t repeated : 1;
 		uint8_t smooth : 1;
+		uint8_t flipped : 1;
+
+		friend class RenderTexture;
 	};
 }
 #endif // SERIOUS_PROTON_SFML_OVER_SDL_TEXTURE_HPP

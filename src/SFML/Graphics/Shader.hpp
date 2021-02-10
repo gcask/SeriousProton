@@ -6,8 +6,11 @@
 #include <SFML/System/InputStream.hpp>
 #include <SFML/System/NonCopyable.hpp>
 #include <glm/mat4x4.hpp>
+#include <glm/vec4.hpp>
 
 #include "SDL_assert.h"
+
+#include <array>
 namespace sf
 {
 	class Shader : NonCopyable
@@ -27,7 +30,7 @@ namespace sf
 		template<typename T>
 		void setUniform(const std::string& name, const T& x)
 		{
-			SDL_assert_release(false && "not implemented");
+			static_assert(false, "not implemented");
 		}
 
 		// Non-SFML
@@ -37,22 +40,28 @@ namespace sf
 		uint32_t vertexShader = 0;
 		uint32_t fragmentShader = 0;
 		uint32_t program = 0;
+		std::array<uint32_t, 8> textures;
+		mutable uint8_t currentTextureUnit = 0;
 	};
-
-	template<>
-	void Shader::setUniform<glm::mat4>(const std::string&, const glm::mat4&);
-	extern template void Shader::setUniform(const std::string &, const glm::mat4&);
-
-	template<>
-	void Shader::setUniform<Color>(const std::string&, const Color&);
-	extern template void Shader::setUniform(const std::string&, const Color&);
-
-	template<>
-	void Shader::setUniform<bool>(const std::string&, const bool&);
-	extern template void Shader::setUniform(const std::string&, const bool&);
-
-	template<>
-	void Shader::setUniform<Vector2f>(const std::string&, const Vector2f&);
-	extern template void Shader::setUniform(const std::string&, const Vector2f&);
+	class Texture;
+#define SF_SHADER_DECLARE_UNIFORM(Type) \
+	template<> void Shader::setUniform<Type>(const std::string&, const Type&); \
+	extern template void Shader::setUniform(const std::string&, const Type&);
+	// Base
+	SF_SHADER_DECLARE_UNIFORM(bool);
+	SF_SHADER_DECLARE_UNIFORM(float);
+	// SFML
+	SF_SHADER_DECLARE_UNIFORM(Color);
+	SF_SHADER_DECLARE_UNIFORM(Vector2f);
+	SF_SHADER_DECLARE_UNIFORM(Vector3f);
+	SF_SHADER_DECLARE_UNIFORM(Texture);
+	SF_SHADER_DECLARE_UNIFORM(Glsl::Vec4);
+	// glm
+	SF_SHADER_DECLARE_UNIFORM(glm::mat4);
+	SF_SHADER_DECLARE_UNIFORM(glm::vec2);
+	SF_SHADER_DECLARE_UNIFORM(glm::vec3);
+	SF_SHADER_DECLARE_UNIFORM(glm::vec4);
+	
+#undef SF_SHADER_DECLARE_UNIFORM
 }
 #endif // SERIOUS_PROTON_SFML_OVER_SDL_SHADER_HPP
