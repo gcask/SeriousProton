@@ -16,6 +16,7 @@ namespace sf
 
 		~Image();
 		const uint8_t* data() const { return pixels; }
+		const uint8_t* getPixelsPtr() const { return data(); }
 	private:
 		void reset();
 		uint8_t* pixels = nullptr;

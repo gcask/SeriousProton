@@ -33,6 +33,8 @@ namespace sf
 			static_assert(false, "not implemented");
 		}
 
+		uint32_t getNativeHandle() const { return program; }
+
 		// Non-SFML
 		int32_t attribute(const char* name) const;
 		explicit operator bool() const { return program != 0; }

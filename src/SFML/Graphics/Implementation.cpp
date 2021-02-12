@@ -760,9 +760,12 @@ void main()
     namespace Glsl
     {
         Vec4::Vec4(const Color&c)
-            :color{ c }
+            :Vec4{ c.r / 255.f, c.g / 255.f, c.b / 255.f, c.a / 255.f }
         {
         }
+        Vec4::Vec4(float x, float y, float z, float w)
+            : vector{x, y, z, w}
+        {}
     }
 #pragma endregion Glsl
 
@@ -1352,12 +1355,7 @@ void main()
     template<>
     void Shader::setUniform(const std::string& name, const Color& color)
     {
-        glm::vec4 vec;
-        vec.r = color.r / 255.f;
-        vec.g = color.g / 255.f;
-        vec.b = color.b / 255.f;
-        vec.a = color.a / 255.f;
-        setUniform(name, vec);
+        setUniform(name, Glsl::Vec4(color));
     }
     template<>
     void Shader::setUniform(const std::string& name, const Vector2f& value)
@@ -1384,7 +1382,7 @@ void main()
     template<>
     void Shader::setUniform(const std::string& name, const Glsl::Vec4& value)
     {
-        setUniform(name, value.color);
+        setUniform(name, value.vector);
     }
     // glm
     template<>
