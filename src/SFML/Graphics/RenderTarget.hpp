@@ -27,6 +27,7 @@ namespace sf
 		Vector2i mapCoordsToPixel(const Vector2f& point) const;
 		void popGLStates();
 		void pushGLStates();
+		void resetGLStates();
 		SDL_Texture* sdlObject = nullptr;
 		uint32_t glObject = 0;
 	private:
