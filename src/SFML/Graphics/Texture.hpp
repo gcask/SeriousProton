@@ -24,6 +24,7 @@ namespace sf
 		void setSmooth(bool smooth);
 		void setFlipped(bool flipped);
 		bool isFlipped() const;
+		uint32_t getNativeHandle() const { return glObject; }
 
 		explicit operator bool() const { return glObject != 0; }
 		void forceUpdate();
