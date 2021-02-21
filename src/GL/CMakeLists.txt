@@ -1,9 +1,9 @@
 cmake_minimum_required(VERSION 3.7)
-project(glew)
+project(glad)
 
 #---------------------------------File lists-----------------------------------
 set(source_files_relative
-	glew.c
+	glad.c
 )
 set(source_files "")
 foreach(source_file_relative ${source_files_relative})
@@ -17,12 +17,12 @@ include_directories(
 )
 
 #----------------------------------Compiling-----------------------------------
-add_library(glew STATIC ${source_files})
+add_library(glad STATIC ${source_files})
 
 #--------------------------------Installation----------------------------------
 install(
-	TARGETS glew
-	EXPORT glew
+	TARGETS glad
+	EXPORT glad
 	DESTINATION lib
 )
 install(
@@ -31,6 +31,6 @@ install(
 	FILES_MATCHING PATTERN "*.h"
 )
 install(
-	EXPORT glew
-	DESTINATION share/glew
+	EXPORT glad
+	DESTINATION share/glad
 )

@@ -1,4 +1,4 @@
-#include <GL/glew.h>
+#include <GL/glad.h>
 #include "windowManager.h"
 #include "Updatable.h"
 #include "Renderable.h"
@@ -33,7 +33,6 @@ WindowManager::WindowManager(int virtualWidth, int virtualHeight, bool fullscree
 #endif
 
     create();
-    glewInit();
 }
 
 WindowManager::~WindowManager()
@@ -119,7 +118,7 @@ void WindowManager::create()
         }
     }
 
-    sf::ContextSettings context_settings(24, 8, fsaa, 3, 2);
+    sf::ContextSettings context_settings(24, 8, fsaa, 2, 0);
     if (fullscreen)
         window.create(sf::VideoMode(windowWidth, windowHeight, 32), WINDOW_TITLE, sf::Style::Fullscreen, context_settings);
     else

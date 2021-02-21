@@ -65,8 +65,8 @@ target_compile_definitions(${PROJECT_NAME} PUBLIC
 )
 target_link_libraries(${PROJECT_NAME}
 	PUBLIC ${SDL2_LIBRARIES} ${SFML_LIBRARIES} glm::glm
-	PRIVATE glew ${OPENGL_LIBRARIES})
+	PRIVATE glad ${OPENGL_LIBRARIES})
 
 add_executable(SFMLTest WIN32 main.cpp)
-target_link_libraries(SFMLTest ${PROJECT_NAME} glew)
+target_link_libraries(SFMLTest ${PROJECT_NAME} glad)
 target_include_directories(SFMLTest PRIVATE ..)

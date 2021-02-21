@@ -22,7 +22,7 @@
 #include "Vertex.hpp"
 #include "View.hpp"
 
-#include "GL/glew.h"
+#include "GL/glad.h"
 
 #include "SDL.h"
 #define STB_RECT_PACK_IMPLEMENTATION
@@ -121,7 +121,7 @@ namespace sf
                 case TriangleFan:
                     return GL_TRIANGLE_FAN;
                 case Quads:
-                    return GL_QUADS;
+                    assert(false && "Quads are not supported!");
                 }
 
                 return GL_NONE;
@@ -978,7 +978,6 @@ void main()
     }
     void RenderTarget::pushGLStates()
     {
-        glChecked(glDisable(GL_ALPHA_TEST));
         glChecked(glDisable(GL_DEPTH_TEST));
     }
 
@@ -987,8 +986,8 @@ void main()
         Texture::bind(nullptr);
         Shader::bind(nullptr);
 
-        glChecked(glDisable(GL_ALPHA_TEST));
         glChecked(glDisable(GL_DEPTH_TEST));
+        glChecked(glDisable(GL_CULL_FACE));
     }
 #pragma endregion RenderTarget
 #pragma region RenderTexture
@@ -1138,7 +1137,7 @@ void main()
             setTitle(title);
             return;
         }
-        SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_COMPATIBILITY);//SDL_GL_CONTEXT_PROFILE_CORE | SDL_GL_CONTEXT_PROFILE_ES);
+        SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE | SDL_GL_CONTEXT_PROFILE_ES);
         SDL_GL_SetAttribute(SDL_GL_CONTEXT_FLAGS, SDL_GL_CONTEXT_DEBUG_FLAG);
         SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, settings.majorVersion);
         SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, settings.minorVersion);
@@ -1179,7 +1178,7 @@ void main()
             impl->settings.minorVersion = value;
         if (!SDL_GL_GetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, &value))
             impl->settings.majorVersion = value;
-        glewInit();
+        gladLoadGLES2Loader(SDL_GL_GetProcAddress);
         setTitle(title);
     }
     const ContextSettings& RenderWindow::getSettings() const
@@ -1538,9 +1537,6 @@ void main()
                 guard.get().setUniform("outline", true);
                 // setup state.
                 auto smoothed = false;
-                glChecked(smoothed = glIsEnabled(GL_LINE_SMOOTH));
-                if (!smoothed)
-                    glChecked(glEnable(GL_LINE_SMOOTH));
                 GLfloat currentWidth = 0.f;
                 glChecked(glGetFloatv(GL_LINE_WIDTH, &currentWidth));
                 glChecked(glLineWidth(outlineThickness));
@@ -1549,8 +1545,6 @@ void main()
                 glChecked(glDrawElements(GL_LINE_STRIP, outlineElementCount, outlineElementType, (GLvoid*)0));
                 // cleanup state
                 glChecked(glLineWidth(currentWidth));
-                if (!smoothed)
-                    glChecked(glDisable(GL_LINE_SMOOTH));
             }
             if (texAttrib >= 0)
             {
@@ -1815,6 +1809,7 @@ void main()
         SDL_assert(coordinateType == CoordinateType::Normalized);
         auto textureID = texture ? texture->glObject : GL_NONE;
         glChecked(glBindTexture(GL_TEXTURE_2D, textureID));
+#if 0
         if (textureID)
         {
             // SFML compat.
@@ -1847,6 +1842,7 @@ void main()
                 glChecked(glMatrixMode(GL_MODELVIEW));
             }
         }
+#endif
     }
     Texture::Texture()
         :repeated(false), smooth(true), flipped(false)

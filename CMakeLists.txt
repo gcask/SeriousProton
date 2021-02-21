@@ -72,7 +72,7 @@ target_compile_definitions(${PROJECT_NAME} PUBLIC
 	# Platform-specific
 	$<$<BOOL:${WIN32}>:NOMINMAX>
 )
-target_link_libraries(SeriousProton PUBLIC box2d lua glew $<BUILD_INTERFACE:json11> $<BUILD_INTERFACE:SFMLoverSDL> ${SFML_LIBRARIES} ${SDL2_LIBRARIES})
+target_link_libraries(SeriousProton PUBLIC box2d lua glad $<BUILD_INTERFACE:json11> $<BUILD_INTERFACE:SFMLoverSDL> ${SFML_LIBRARIES} ${SDL2_LIBRARIES})
 
 #--------------------------------Installation----------------------------------
 install(
