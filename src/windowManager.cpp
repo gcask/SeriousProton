@@ -1,4 +1,4 @@
-#include <GL/glew.h>
+#include <GL/glad.h>
 #include "windowManager.h"
 #include "Updatable.h"
 #include "Renderable.h"
@@ -32,7 +32,7 @@ WindowManager::WindowManager(int virtualWidth, int virtualHeight, bool fullscree
 #endif
 
     create();
-    glewInit();
+    gladLoadGL();
 }
 
 WindowManager::~WindowManager()
