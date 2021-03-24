@@ -16,6 +16,10 @@ namespace sf
 	class Shape : public Drawable, public Transformable
 	{
 	public:
+		Shape(const Shape&) = delete;
+		Shape(Shape&&) = delete;
+		Shape& operator=(const Shape&) = delete;
+		Shape& operator=(Shape&&) = delete;
 		~Shape() override;
 		void setFillColor(const Color& color);
 		void setOutlineColor(const Color& color);

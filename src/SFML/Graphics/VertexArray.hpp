@@ -16,6 +16,10 @@ namespace sf
 	{
 	public:
 		explicit VertexArray(PrimitiveType type, std::size_t vertexCount = 0);
+		VertexArray(const VertexArray&) = delete;
+		VertexArray(VertexArray&&) = delete;
+		VertexArray& operator=(const VertexArray&) = delete;
+		VertexArray& operator=(VertexArray&&) = delete;
 		~VertexArray() override;
 		Vertex& operator [](std::size_t index);
 		const Vertex& operator [](std::size_t index) const;

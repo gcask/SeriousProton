@@ -25,6 +25,10 @@ namespace sf
         };
 
         Text(const String& string, const Font& font, unsigned int characterSize = 30);
+        Text(const Text&) = delete;
+        Text& operator =(const Text&) = delete;
+        Text(Text&&) = delete;
+        Text& operator =(Text&&) = delete;
         ~Text() override;
         void setColor(const Color& color);
         FloatRect getLocalBounds() const;
