@@ -98,6 +98,147 @@ namespace std
 #else
 #define glChecked(call) call
 #endif
+
+namespace
+{
+    class BufferCache
+    {
+    public:
+        struct Entry
+        {
+            constexpr Entry(uint32_t id, size_t size)
+                :id{ id }, size{ size }
+            {}
+
+            Entry() noexcept = default;
+            Entry(const Entry&) = delete;
+            Entry& operator=(const Entry&) = delete;
+
+            Entry(Entry&& other) noexcept
+                :id{other.id}, size{other.size}
+            {
+                other.id = 0;
+                other.size = 0;
+            }
+
+            Entry& operator =(Entry&& other) noexcept
+            {
+                if (this != &other)
+                {
+                    id = other.id;
+                    size = other.size;
+                    other.id = 0;
+                    other.size = 0;
+                }
+
+                return *this;
+            }
+
+            uint32_t id = 0;
+            size_t size = 0;
+        };
+
+        uint32_t acquire(size_t size)
+        {
+            // Do we have one that fits the bill?
+            Entry needle{ 0, size };
+
+            do
+            {
+                auto candidate = std::lower_bound(std::begin(freelist), std::end(freelist), needle, [](const auto& lhs, const auto& rhs) { return lhs.size < rhs.size; });
+
+                if (candidate != std::end(freelist))
+                {
+                    candidate->size = size;
+                    actives.emplace_back(std::move(*candidate));
+                    freelist.erase(candidate);
+
+                    return actives.back().id;
+                }
+
+                // Do we have an empty buffer?
+                candidate = std::find_if(std::begin(freelist), std::end(freelist), [](const auto& entry) { return entry.size == 0; });
+                
+                if (candidate != std::end(freelist))
+                {
+                    // fill and return
+                    actives.emplace_back(std::move(*candidate));
+                    freelist.erase(candidate);
+                    int32_t current = 0;
+                    glChecked(glGetIntegerv(GL_ARRAY_BUFFER_BINDING, &current));
+                    glChecked(glBindBuffer(GL_ARRAY_BUFFER, actives.back().id));
+                    // Initialize
+                    actives.back().size = size;
+                    glChecked(glBufferData(GL_ARRAY_BUFFER, actives.back().size, nullptr, GL_DYNAMIC_DRAW));
+                    glChecked(glBindBuffer(GL_ARRAY_BUFFER, current));
+
+                    return actives.back().id;
+                }
+
+                // No buffer found - generate new ones and retry.
+                generate();
+
+            } while (true);
+        }
+
+        void release(uint32_t entry)
+        {
+            auto item = std::find_if(std::begin(actives), std::end(actives), [entry](const auto& item) { return item.id == entry; });
+            if (item != std::end(actives))
+            {
+                pendings.emplace_back(std::move(*item));
+                actives.erase(item);
+            }
+        }
+
+        size_t getSize(uint32_t entry) const
+        {
+            if (entry == 0)
+                return 0;
+            auto item = std::find_if(std::begin(actives), std::end(actives), [entry](const auto& item) { return item.id == entry; });
+            return item != std::end(actives) ? item->size : 0;
+        }
+
+        void initialize(size_t initial_count = 64)
+        {
+            generate(initial_count);
+        }
+
+        void reset()
+        {
+            SDL_assert(actives.empty());
+            auto pending_size = pendings.size();
+            freelist.reserve(freelist.size() + pending_size);
+            for (auto& entry : pendings)
+                freelist.emplace_back(std::move(entry));
+            pendings.clear();
+            pendings.reserve(pending_size);
+            std::sort(std::begin(freelist), std::end(freelist), [](const auto& lhs, const auto& rhs) { return lhs.size < rhs.size; });
+        }
+
+        void shutdown()
+        {
+        }
+    private:
+        void generate(size_t count = 64)
+        {
+            std::vector<uint32_t> buffers(count, 0);
+            glChecked(glGenBuffers(buffers.size(), buffers.data()));
+
+            freelist.reserve(freelist.size() + buffers.size());
+
+            for (auto buffer : buffers)
+            {
+                freelist.emplace_back(buffer, 0);
+            }
+        }
+       
+        std::vector<Entry> freelist;
+        std::vector<Entry> actives;
+        std::vector<Entry> pendings;
+    } cache;
+}
+
 namespace sf
 {
     namespace
@@ -1122,6 +1263,7 @@ void main()
         if (impl)
         {
             SDL_GL_SwapWindow(impl->window);
+            cache.reset();
             if (impl->lastStart)
             {
                 // Do we need to throttle?
@@ -1134,6 +1276,7 @@ void main()
     }
     void RenderWindow::close()
     {
+        cache.shutdown();
         impl = std::make_unique<Impl>();
     }
 
@@ -1436,7 +1579,11 @@ void main()
 #pragma region Shape
     Shape::~Shape()
     {
-        glChecked(glDeleteBuffers(buffers.size(), buffers.data()));
+        for (auto buffer : buffers)
+        {
+            if (buffer)
+                cache.release(buffer);
+        }
     }
     void Shape::setFillColor(const Color& color)
     {
@@ -1565,10 +1712,7 @@ void main()
         }
     }
 
-    Shape::Shape()
-    {
-        glChecked(glGenBuffers(buffers.size(), buffers.data()));
-    }
+    Shape::Shape() = default;
     void Shape::setVertices(std::initializer_list<VertexInfo> vertices)
     {
         setVertices(std::begin(vertices), vertices.size());
@@ -1581,9 +1725,11 @@ void main()
     {
         GLint currentEbo = 0;
         glChecked(glGetIntegerv(GL_ELEMENT_ARRAY_BUFFER_BINDING, &currentEbo));
+        SDL_assert(buffers[buffer_cast(Buffer::ElementsFilled)] == 0);
+        buffers[buffer_cast(Buffer::ElementsFilled)] = cache.acquire(count * typeSize);
         // update our EBO.
         glChecked(glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, buffers[buffer_cast(Buffer::ElementsFilled)]));
-        glChecked(glBufferData(GL_ELEMENT_ARRAY_BUFFER, count * typeSize, elements, GL_STATIC_DRAW));
+        glChecked(glBufferSubData(GL_ELEMENT_ARRAY_BUFFER, 0, count * typeSize, elements));
         glChecked(glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, currentEbo));
         elementCount = count;
         switch (typeSize)
@@ -1605,6 +1751,13 @@ void main()
     {
         GLint currentVbo = 0;
         glChecked(glGetIntegerv(GL_ARRAY_BUFFER_BINDING, &currentVbo));
+        if ((count * sizeof(decltype(*vertices)) > cache.getSize(buffers[buffer_cast(Buffer::Vertex)])))
+        {
+            cache.release(buffers[buffer_cast(Buffer::Vertex)]);
+            buffers[buffer_cast(Buffer::Vertex)] = cache.acquire(count * sizeof(decltype(*vertices)));
+
+        }
+        
         // update our VBO.
         glChecked(glBindBuffer(GL_ARRAY_BUFFER, buffers[buffer_cast(Buffer::Vertex)]));
         glChecked(glBufferData(GL_ARRAY_BUFFER, count * sizeof(decltype(*vertices)), vertices, GL_STATIC_DRAW));
@@ -1614,6 +1767,10 @@ void main()
     {
         GLint currentEbo = 0;
         glChecked(glGetIntegerv(GL_ELEMENT_ARRAY_BUFFER_BINDING, &currentEbo));
+        SDL_assert(buffers[buffer_cast(Buffer::ElementsOutline)] == 0);
+        buffers[buffer_cast(Buffer::ElementsOutline)] = cache.acquire(count * typeSize);
+
+        
         // update our outline VBO.
         glChecked(glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, buffers[buffer_cast(Buffer::ElementsOutline)]));
         glChecked(glBufferData(GL_ELEMENT_ARRAY_BUFFER, count * typeSize, elements, GL_STATIC_DRAW));
@@ -1676,7 +1833,6 @@ void main()
     Text::Text(const String& string, const Font& font, unsigned int characterSize)
         :textLength{string.getSize()}
     {
-        glChecked(glGenBuffers(buffers.size(), buffers.data()));
         std::vector<VertexInfo> vertices;
         std::vector<uint32_t> elements;
 
@@ -1733,12 +1889,14 @@ void main()
         }
 
         // Upload
+        buffers[1] = cache.acquire(elements.size() * sizeof(uint32_t));
+        buffers[0] = cache.acquire(vertices.size() * sizeof(VertexInfo));
         {
             GLint currentEbo = 0;
             glChecked(glGetIntegerv(GL_ELEMENT_ARRAY_BUFFER_BINDING, &currentEbo));
             // update our EBO.
             glChecked(glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, buffers[1]));
-            glChecked(glBufferData(GL_ELEMENT_ARRAY_BUFFER, elements.size() * sizeof(decltype(elements[0])), elements.data(), GL_STATIC_DRAW));
+            glChecked(glBufferSubData(GL_ELEMENT_ARRAY_BUFFER, 0, elements.size() * sizeof(decltype(elements[0])), elements.data()));
             glChecked(glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, currentEbo));
         }
         {
@@ -1746,16 +1904,18 @@ void main()
             glChecked(glGetIntegerv(GL_ARRAY_BUFFER_BINDING, &currentVbo));
             // update our VBO.
             glChecked(glBindBuffer(GL_ARRAY_BUFFER, buffers[0]));
-            glChecked(glBufferData(GL_ARRAY_BUFFER, vertices.size() * sizeof(decltype(vertices[0])), vertices.data(), GL_STATIC_DRAW));
+            glChecked(glBufferSubData(GL_ARRAY_BUFFER, 0, vertices.size() * sizeof(decltype(vertices[0])), vertices.data()));
             glChecked(glBindBuffer(GL_ARRAY_BUFFER, currentVbo));
         }
 
         texture = &atlas.tex;
+        textLength = elements.size() / 6;
     }
 
     Text::~Text()
     {
-        glChecked(glDeleteBuffers(buffers.size(), buffers.data()));
+        for (auto buffer : buffers)
+            cache.release(buffer);
     }
     void Text::setColor(const Color& color)
     {
@@ -2039,13 +2199,18 @@ void main()
 #pragma region VertexArray
     VertexArray::VertexArray(PrimitiveType type, std::size_t vertexCount)
         :vertices(vertexCount),
-        type{gl::primitive_cast(type)}
+        type{ gl::primitive_cast(type) }
     {
-        glChecked(glGenBuffers(2, buffers.data()));
+        buffers[0] = cache.acquire(vertices.size() * sizeof(decltype(vertices)::value_type));
     }
     VertexArray::~VertexArray()
     {
-        glChecked(glDeleteBuffers(2, buffers.data()));
+        for (auto buffer : buffers)
+        {
+            if (buffer)
+                cache.release(buffer);
+        }
+            
     }
     Vertex& VertexArray::operator [](std::size_t index)
     {
@@ -2081,10 +2246,10 @@ void main()
 
         if (dirty)
         {
-            glChecked(glBufferData(GL_ARRAY_BUFFER, vertices.size() * sizeof(decltype(vertices)::value_type), vertices.data(), GL_STATIC_DRAW));
+            glChecked(glBufferSubData(GL_ARRAY_BUFFER, 0, vertices.size() * sizeof(decltype(vertices)::value_type), vertices.data()));
             if (!elements.empty())
             {
-                glChecked(glBufferData(GL_ELEMENT_ARRAY_BUFFER, elements.size() * sizeof(decltype(elements)::value_type), elements.data(), GL_STATIC_DRAW));
+                glChecked(glBufferSubData(GL_ELEMENT_ARRAY_BUFFER, 0, elements.size() * sizeof(decltype(elements)::value_type), elements.data()));
             }
             dirty = false;
         }
@@ -2125,7 +2290,14 @@ void main()
 
     void VertexArray::setElements(std::vector<uint32_t>&& elements)
     {
+        if (buffers[1])
+        {
+            cache.release(buffers[1]);
+            buffers[1] = 0;
+        }
         this->elements = std::move(elements);
+
+        buffers[1] = cache.acquire(elements.size() * sizeof(decltype(this->elements)::value_type));
         dirty = true;
     }
 #pragma endregion VertexArray
