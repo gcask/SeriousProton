@@ -1,11 +1,12 @@
 cmake_minimum_required(VERSION 3.7)
-project(SeriousProton VERSION 1.0)
+project(SeriousProton LANGUAGES CXX VERSION 1.0)
 
-set(CMAKE_CXX_STANDARD 14)
+set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED True)
+
 set(CMAKE_MODULE_PATH
-	${CMAKE_SOURCE_DIR}/cmake/
-	${CMAKE_MODULE_PATH}
+    ${CMAKE_SOURCE_DIR}/cmake/
+    ${CMAKE_MODULE_PATH}
 )
 
 #--------------------------------Dependencies----------------------------------
@@ -92,6 +93,6 @@ install(
 	FILES_MATCHING PATTERN "*.hpp"
 )
 install(
-	EXPORT seriousproton
-	DESTINATION share/seriousproton
+    EXPORT seriousproton
+    DESTINATION share/seriousproton
 )
