@@ -1119,8 +1119,8 @@ void main()
     }
     void RenderTarget::pushGLStates()
     {
-        glChecked(glDisable(GL_ALPHA_TEST));
         glChecked(glDisable(GL_DEPTH_TEST));
+        glChecked(glDisable(GL_CULL_FACE));
     }
 
     void RenderTarget::resetGLStates()
@@ -1128,8 +1128,8 @@ void main()
         Texture::bind(nullptr);
         Shader::bind(nullptr);
 
-        glChecked(glDisable(GL_ALPHA_TEST));
         glChecked(glDisable(GL_DEPTH_TEST));
+        glChecked(glDisable(GL_CULL_FACE));
     }
 #pragma endregion RenderTarget
 #pragma region RenderTexture
