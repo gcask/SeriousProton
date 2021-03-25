@@ -11,7 +11,7 @@ namespace sf
 	public:
 		RenderTexture();
 		~RenderTexture();
-		bool create(unsigned int width, unsigned int height, bool depthBuffer);
+		bool create(unsigned int width, unsigned int height, bool = false);
 		void setRepeated(bool repeated);
 		void setSmooth(bool smooth);
 		void display();
