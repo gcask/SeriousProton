@@ -1131,6 +1131,7 @@ void main()
     void RenderTarget::pushGLStates()
     {
         glChecked(glDisable(GL_DEPTH_TEST));
+        glChecked(glDisable(GL_CULL_FACE));
     }
 
     void RenderTarget::resetGLStates()
