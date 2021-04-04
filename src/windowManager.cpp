@@ -10,6 +10,14 @@
 #include <windows.h>
 #endif
 
+namespace
+{
+    void* loadGLFunction(const char* name)
+    {
+        return sf::Context::getFunction(name);
+    }
+}
+
 WindowManager::WindowManager(int virtualWidth, int virtualHeight, bool fullscreen, RenderChain* renderChain, int fsaa)
 : virtualSize(virtualWidth, virtualHeight), renderChain(renderChain), fullscreen(fullscreen), fsaa(fsaa)
 {
@@ -32,7 +40,15 @@ WindowManager::WindowManager(int virtualWidth, int virtualHeight, bool fullscree
 #endif
 
     create();
-    gladLoadGL();
+    {
+        //sf::Context context;
+
+#ifndef SFML_OPENGL_ES
+        gladLoadGLLoader(&loadGLFunction);
+#else
+        gladLoadGLES2Loader(&loadGLFunction);
+#endif
+    }
 }
 
 WindowManager::~WindowManager()
