@@ -10,11 +10,19 @@
 #include <windows.h>
 #endif
 
+#ifdef SFML_OPENGL_ES
+#include <EGL/egl.h>
+#endif
+
 namespace
 {
     void* loadGLFunction(const char* name)
     {
+#ifndef SFML_OPENGL_ES
         return sf::Context::getFunction(name);
+#else
+        return eglGetProcAddress(name);
+#endif
     }
 }
 
