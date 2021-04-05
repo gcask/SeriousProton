@@ -5,7 +5,7 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED True)
 find_package(SFML COMPONENTS system REQUIRED)
 find_package(SDL2 REQUIRED)
-find_package(OpenGL REQUIRED)
+
 add_subdirectory(glm)
 
 set(SOURCES
@@ -57,7 +57,7 @@ target_compile_options(${PROJECT_NAME} PUBLIC
 
 target_include_directories(${PROJECT_NAME}
 	PUBLIC ${SDL2_INCLUDE_DIRS} ${SFML_INCLUDE_DIR}
-	PRIVATE .. ${OPENGL_INCLUDE_DIR})
+	PRIVATE ..)
 target_compile_definitions(${PROJECT_NAME} PUBLIC
 	SFML_NO_DEPRECATED_WARNINGS # SFML 2.5 gives deprication warnings on a few functions we use. But we maintain 2.3 compatibility, so ignore those warnings.
 	# Platform-specific
@@ -65,7 +65,7 @@ target_compile_definitions(${PROJECT_NAME} PUBLIC
 )
 target_link_libraries(${PROJECT_NAME}
 	PUBLIC ${SDL2_LIBRARIES} ${SFML_LIBRARIES} glm::glm
-	PRIVATE glad ${OPENGL_LIBRARIES})
+	PRIVATE glad)
 
 add_executable(SFMLTest WIN32 main.cpp)
 target_link_libraries(SFMLTest ${PROJECT_NAME} glad)
