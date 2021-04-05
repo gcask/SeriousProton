@@ -822,8 +822,8 @@ void main()
                 stbtt_GetFontVMetrics(&font, &ascent, &descent, &lineGap);
                 auto lineHeight = scale * (ascent - descent + lineGap);
                 auto charWidth = scale * STBTT_POINT_SIZE(int32_t(characterSize));
-                atlas.size.x = ((characterSize + 4) * 128);
-                atlas.size.y = ((characterSize + 4) * 2);
+                atlas.size.x = ((characterSize + 4) * 16);
+                atlas.size.y = ((characterSize + 4) * 16);
                 for (; atlasData.empty();)
                 {
                     atlasData.resize(size_t(atlas.size.x) * atlas.size.y);
