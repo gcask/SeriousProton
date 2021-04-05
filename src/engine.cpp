@@ -129,9 +129,12 @@ void Engine::runMainLoop()
             InputHandler::postEventsUpdate();
 
 #ifdef DEBUG
-            if (SDL_SCANCODE_isKeyPressed(SDL_SCANCODE_ESCAPE) && windowManager->hasFocus())
-                running = false;
-
+            {
+                auto keyboard = SDL_GetKeyboardState(nullptr);
+                if (keyboard[SDL_SCANCODE_ESCAPE] != 0 && windowManager->hasFocus())
+                    running = false;
+            }
+            
             if (debugOutputClock.getElapsedTime().asSeconds() > 1.0)
             {
                 printf("Object count: %4d %4zd %4zd\n", DEBUG_PobjCount, updatableList.size(), entityList.size());
@@ -146,10 +149,13 @@ void Engine::runMainLoop()
                 delta = 0.001;
             delta *= gameSpeed;
 #ifdef DEBUG
-            if (SDL_SCANCODE_isKeyPressed(SDL_SCANCODE_Tab))
-                delta /= 5.0;
-            if (SDL_SCANCODE_isKeyPressed(SDL_SCANCODE_Tilde))
-                delta *= 5.0;
+            {
+                auto keyboard = SDL_GetKeyboardState(nullptr);
+                if (keyboard[SDL_SCANCODE_TAB] != 0)
+                        delta /= 5.0;
+                if (keyboard[SDL_SCANCODE_BACKSLASH] != 0)
+                    delta *= 5.0;
+            }
 #endif
             EngineTiming engine_timing;
             

@@ -18,6 +18,7 @@ namespace sf
 	public:
 		virtual ~RenderTarget();
 		virtual sf::Vector2u getSize() const;
+		IntRect getViewport(const View&) const;
 		const View& getView() const;
 		void setView(const View& view);
 		void clear(const Color& color = Color::Black);

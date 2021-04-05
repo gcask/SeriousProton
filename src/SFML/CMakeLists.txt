@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.7)
 project(SFMLoverSDL VERSION 1.0)
 
-set(CMAKE_CXX_STANDARD 14)
+set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED True)
 find_package(SFML COMPONENTS system REQUIRED)
 find_package(SDL2 REQUIRED)

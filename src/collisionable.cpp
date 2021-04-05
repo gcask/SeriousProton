@@ -4,6 +4,10 @@
 #include "Renderable.h"
 #include "vectorUtils.h"
 
+#include <SFML/Graphics/VertexArray.hpp>
+#include <SFML/Graphics/RenderTarget.hpp>
+#include <SFML/Graphics/CircleShape.hpp>
+
 #define BOX2D_SCALE 20.0f
 static inline sf::Vector2f b2v(b2Vec2 v)
 {

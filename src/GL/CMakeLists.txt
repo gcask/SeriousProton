@@ -10,16 +10,10 @@ foreach(source_file_relative ${source_files_relative})
 	list(APPEND source_files ${CMAKE_CURRENT_SOURCE_DIR}/${source_file_relative})
 endforeach()
 
-include_directories(
-	${CMAKE_CURRENT_BINARY_DIR}
-	${CMAKE_CURRENT_SOURCE_DIR}
-	${CMAKE_CURRENT_SOURCE_DIR}/.. #Because the header files are requested starting from "GL/..."
-)
-
 #----------------------------------Compiling-----------------------------------
 add_library(glad STATIC ${source_files})
 
-target_include_directories(glew
+target_include_directories(glad
     PUBLIC
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/..>)
 

@@ -42,7 +42,7 @@ if(ENABLE_CRASH_LOGGER)
 endif()
 
 #--------------------------------Dependencies----------------------------------
-find_package(SFML 2.4 COMPONENTS system audio network window graphics)
+find_package(SFML 2.4 COMPONENTS system audio network)
 if(NOT ${SFML_FOUND})
     message(STATUS "Couldn't find SFML. Building it from scratch.")
     
@@ -80,6 +80,7 @@ add_subdirectory(src/Box2D)
 add_subdirectory(src/lua)
 add_subdirectory(src/GL)
 add_subdirectory(src/libopus)
+add_subdirectory(src/SFML)
 
 if(SERIOUSPROTON_WITH_JSON)
     add_subdirectory(src/json11)
@@ -168,7 +169,7 @@ target_compile_options(seriousproton
 
 target_link_libraries(seriousproton
     PUBLIC 
-        box2d lua glew ${SFML_LIBRARIES}
+        box2d lua $<BUILD_INTERFACE:SFMLoverSDL>
         "$<$<BOOL:${WIN32}>:wsock32>"
     PRIVATE $<BUILD_INTERFACE:opus>
     INTERFACE

@@ -907,6 +907,17 @@ void main()
     {
         throw not_implemented();
     }
+    IntRect RenderTarget::getViewport(const View& view) const
+    {
+        auto width = static_cast<float>(getSize().x);
+        auto height = static_cast<float>(getSize().y);
+        const FloatRect& viewport = view.getViewport();
+
+        return IntRect{ static_cast<int32_t>(std::round(width * viewport.left)),
+            static_cast<int32_t>(std::round(height * viewport.top)),
+            static_cast<int32_t>(std::round(width * viewport.width)),
+            static_cast<int32_t>(std::round(height * viewport.height)) };
+    }
     const View& RenderTarget::getView() const
     {
         return view;
@@ -1023,11 +1034,11 @@ void main()
                 glChecked(glBindRenderbuffer(GL_RENDERBUFFER, GL_NONE));
             }
 
-            glChecked(glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_COMPONENT, GL_RENDERBUFFER, rbo));
+            glChecked(glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, rbo));
         }
         else if (rbo != GL_NONE)
         {
-            glChecked(glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_COMPONENT, GL_RENDERBUFFER, GL_NONE));
+            glChecked(glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, GL_NONE));
         }
 
         auto status = GL_NONE;

@@ -153,8 +153,9 @@ void InputHandler::handleEvent(SDL_Event& event)
         // Clamp axis_pos within SFML range.
         axis_pos = std::min(std::max(-100.f, axis_pos), 100.f);
 
-        if (joystick_axis_pos[event.jaxis.which][event.jaxis.axis] != axis_pos){
+        if (joystick_axis_pos[event.jaxis.which][event.jaxis.axis] != axis_pos) {
             joystick_axis_changed[event.jaxis.which][event.jaxis.axis] = true;
+        }
         
         joystick_axis_pos[event.jaxis.which][event.jaxis.axis] = axis_pos;
     }
