@@ -19,6 +19,10 @@ include_directories(
 #----------------------------------Compiling-----------------------------------
 add_library(glad STATIC ${source_files})
 
+target_include_directories(glew
+    PUBLIC
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/..>)
+
 #--------------------------------Installation----------------------------------
 install(
 	TARGETS glad
@@ -26,9 +30,9 @@ install(
 	DESTINATION lib
 )
 install(
-	DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
-	DESTINATION include
-	FILES_MATCHING PATTERN "*.h"
+    DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    DESTINATION include
+    FILES_MATCHING PATTERN "*.h"
 )
 install(
 	EXPORT glad

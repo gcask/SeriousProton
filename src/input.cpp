@@ -140,15 +140,22 @@ void InputHandler::handleEvent(SDL_Event& event)
         constexpr float sfmlRange = std::get<1>(sfmlAxis) - std::get<0>(sfmlAxis);
         constexpr float sdlRange = std::get<1>(sdlAxis) - std::get<0>(sdlAxis);
         const float position = std::get<0>(sfmlAxis) + (sfmlRange * event.jaxis.value) / sdlRange;
+        static constexpr float scale_factor = 100.f / (100.f - joystick_axis_snap_to_0_range);
+
         float axis_pos = 0.f;
+        
         if (position > joystick_axis_snap_to_0_range) {
-            axis_pos = (position - joystick_axis_snap_to_0_range) * ((joystick_axis_snap_to_0_range / 100) + 1);
+            axis_pos = (position - joystick_axis_snap_to_0_range) * scale_factor;
         } else if (position < -joystick_axis_snap_to_0_range) {
-            axis_pos = (position + joystick_axis_snap_to_0_range) * ((joystick_axis_snap_to_0_range / 100) + 1);
+            axis_pos = (position + joystick_axis_snap_to_0_range) * scale_factor;
         }
+
+        // Clamp axis_pos within SFML range.
+        axis_pos = std::min(std::max(-100.f, axis_pos), 100.f);
+
         if (joystick_axis_pos[event.jaxis.which][event.jaxis.axis] != axis_pos){
             joystick_axis_changed[event.jaxis.which][event.jaxis.axis] = true;
-        }
+        
         joystick_axis_pos[event.jaxis.which][event.jaxis.axis] = axis_pos;
     }
     else if (event.type == SDL_JOYBUTTONDOWN)
