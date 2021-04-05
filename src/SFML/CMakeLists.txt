@@ -56,7 +56,7 @@ target_compile_options(${PROJECT_NAME} PUBLIC
 )
 
 target_include_directories(${PROJECT_NAME}
-	PUBLIC ${SDL2_INCLUDE_DIRS} ${SFML_INCLUDE_DIR}
+	PUBLIC ${SFML_INCLUDE_DIR}
 	PRIVATE ..)
 target_compile_definitions(${PROJECT_NAME} PUBLIC
 	SFML_NO_DEPRECATED_WARNINGS # SFML 2.5 gives deprication warnings on a few functions we use. But we maintain 2.3 compatibility, so ignore those warnings.
@@ -64,7 +64,7 @@ target_compile_definitions(${PROJECT_NAME} PUBLIC
 	$<$<BOOL:${WIN32}>:NOMINMAX>
 )
 target_link_libraries(${PROJECT_NAME}
-	PUBLIC ${SDL2_LIBRARIES} ${SFML_LIBRARIES} glm::glm
+	PUBLIC SDL2::SDL2 ${SFML_LIBRARIES} glm::glm
 	PRIVATE glad)
 
 add_executable(SFMLTest WIN32 main.cpp)
