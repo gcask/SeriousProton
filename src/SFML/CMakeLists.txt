@@ -67,6 +67,7 @@ target_link_libraries(${PROJECT_NAME}
 	PUBLIC SDL2::SDL2 ${SFML_LIBRARIES} glm::glm
 	PRIVATE glad)
 
-add_executable(SFMLTest WIN32 main.cpp EXCLUDE_FROM_ALL)
+add_executable(SFMLTest WIN32 main.cpp)
 target_link_libraries(SFMLTest ${PROJECT_NAME} glad)
 target_include_directories(SFMLTest PRIVATE ..)
+set_property(TARGET SFMLTest PROPERTY EXCLUDE_FROM_ALL)
