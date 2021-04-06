@@ -30,7 +30,7 @@ namespace sf
 		template<typename T>
 		void setUniform(const std::string& name, const T& x)
 		{
-			static_assert(false, "not implemented");
+			SDL_assert_release(false && "not implemented");
 		}
 
 		uint32_t getNativeHandle() const { return program; }
