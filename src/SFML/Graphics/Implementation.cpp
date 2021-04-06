@@ -704,7 +704,7 @@ void main()
 #pragma region CircleShape
     CircleShape::CircleShape(float radius, std::size_t pointCount)
     {
-        std::vector<uint32_t> elements(pointCount + 2);
+        std::vector<uint16_t> elements(pointCount + 2);
         std::vector<VertexInfo> vertices(pointCount + 1); // points + center
         // First vertex is the center.
         vertices[0].position = { radius, radius };
@@ -715,7 +715,7 @@ void main()
             float x = std::cos(angle) * radius;
             float y = std::sin(angle) * radius;
             vertices[i].position = { radius + x, radius + y };
-            elements[i] = static_cast<uint32_t>(i);
+            elements[i] = static_cast<uint16_t>(i);
         }
         elements[pointCount + 1] = 1;
         setFilledElements(elements);
@@ -1070,8 +1070,8 @@ void main()
     void RenderTarget::clear(const Color& color)
     {
         ScopedRenderTarget guard{ this };
-        glClearColor(color.r / 255.f, color.g / 255.f, color.b / 255.f, color.a / 255.f);
-        glClear(GL_COLOR_BUFFER_BIT);
+        glChecked(glClearColor(color.r / 255.f, color.g / 255.f, color.b / 255.f, color.a / 255.f));
+        glChecked(glClear(GL_COLOR_BUFFER_BIT));
     }
 
     void RenderTarget::draw(const Drawable& drawable, const RenderStates& states)
@@ -1497,7 +1497,9 @@ void main()
     {
         if (!program)
             return -1;
-        return glGetAttribLocation(program, name);
+        int32_t location = -1;
+        glChecked(location = glGetAttribLocation(program, name));
+        return location;
     }
 
     template<>
@@ -1835,7 +1837,7 @@ void main()
         :textLength{string.getSize()}
     {
         std::vector<VertexInfo> vertices;
-        std::vector<uint32_t> elements;
+        std::vector<uint16_t> elements;
 
         vertices.reserve(textLength * 4); // 4 vertices per glyph (1 quad)
         elements.reserve(textLength * 6); // 6 elements each (2 triangles)
@@ -1890,7 +1892,7 @@ void main()
         }
 
         // Upload
-        buffers[1] = cache.acquire(elements.size() * sizeof(uint32_t));
+        buffers[1] = cache.acquire(elements.size() * sizeof(uint16_t));
         buffers[0] = cache.acquire(vertices.size() * sizeof(VertexInfo));
         {
             GLint currentEbo = 0;
@@ -1969,7 +1971,7 @@ void main()
             auto texAttrib = guard.get().attribute("intex");
             glChecked(glEnableVertexAttribArray(texAttrib));
             glChecked(glVertexAttribPointer(texAttrib, 2, GL_FLOAT, GL_FALSE, vertexTypeSize, (GLvoid*)sizeof(Vector2f)));
-            glChecked(glDrawElements(GL_TRIANGLES, textLength * 6, GL_UNSIGNED_INT, (GLvoid*)0));
+            glChecked(glDrawElements(GL_TRIANGLES, textLength * 6, GL_UNSIGNED_SHORT, (GLvoid*)0));
             glChecked(glDisableVertexAttribArray(texAttrib));
             glChecked(glDisableVertexAttribArray(posAttrib));
         }
@@ -2065,6 +2067,7 @@ void main()
             }
         }
         forceUpdate();
+        glChecked(glGenerateMipmap(GL_TEXTURE_2D));
         return true;
     }
 
@@ -2278,18 +2281,18 @@ void main()
         glChecked(glVertexAttribPointer(texAttrib, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex), (GLvoid*)(sizeof(Vector2f) + sizeof(Color))));
         if (!elements.empty())
         {
-            glDrawElements(type, elements.size(), GL_UNSIGNED_INT, (GLvoid*)0);
+            glChecked(glDrawElements(type, elements.size(), GL_UNSIGNED_SHORT, (GLvoid*)0));
         }
         else
         {
-            glDrawArrays(type, 0, vertices.size());
+            glChecked(glDrawArrays(type, 0, vertices.size()));
         }
         glChecked(glDisableVertexAttribArray(colorAttrib));
         glChecked(glDisableVertexAttribArray(posAttrib));
         glChecked(glDisableVertexAttribArray(texAttrib));
     }
 
-    void VertexArray::setElements(std::vector<uint32_t>&& elements)
+    void VertexArray::setElements(std::vector<uint16_t>&& elements)
     {
         if (buffers[1])
         {

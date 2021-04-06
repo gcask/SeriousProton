@@ -27,10 +27,10 @@ namespace sf
 		void draw(RenderTarget&, RenderStates) const override final;
 
 		// non-sfml
-		void setElements(std::vector<uint32_t>&& elements);
+		void setElements(std::vector<uint16_t>&& elements);
 	private:
 		std::vector<Vertex> vertices;
-		std::vector<uint32_t> elements;
+		std::vector<uint16_t> elements;
 		std::array<uint32_t, 2> buffers = { 0, 0 };
 		uint32_t type = 0;
 		mutable bool dirty = true;
