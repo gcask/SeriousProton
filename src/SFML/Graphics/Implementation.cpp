@@ -956,11 +956,26 @@ void main()
         auto stbcallbacks = stb::forRWops();
         int width = 0, height = 0, components = 0;
 
-        pixels = stbi_load_from_callbacks(&stbcallbacks, ops, &width, &height, nullptr, STBI_rgb_alpha);
-        if (pixels)
+        auto full_res = stbi_load_from_callbacks(&stbcallbacks, ops, &width, &height, nullptr, STBI_rgb_alpha);
+        if (full_res)
         {
-            size.x = width;
-            size.y = height;
+            // quarter-res the image.
+            pixels = static_cast<uint8_t*>(STBI_MALLOC((width / 2) * (height / 2) * sizeof(uint32_t)));
+            if (pixels)
+            {
+                for (auto y = 0; y < height / 2; ++y)
+                {
+                    for (auto x = 0; x < width / 2; ++x)
+                    {
+                        SDL_memcpy4(pixels + sizeof(uint32_t) * (x + y * (width / 2)), full_res + sizeof(uint32_t) * (2 * x + 2 * y * width), 1);
+                    }
+                }
+                    
+            }
+
+            size.x = width / 2;
+            size.y = height / 2;
+            STBI_FREE(full_res);
         }
         else
         {
@@ -974,7 +989,7 @@ void main()
     {
         SDL_assert(pixels != nullptr);
         Color result;
-        auto pixel = pixels + x + size_t(y) * getSize().x;
+        auto pixel = pixels + sizeof(uint32_t) * (x + size_t(y) * getSize().x);
         return Color(pixel[0], pixel[1], pixel[2], pixel[3]);
     }
     Image::~Image()
