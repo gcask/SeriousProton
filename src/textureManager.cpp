@@ -2,6 +2,8 @@
 #include "resources.h"
 #include "textureManager.h"
 
+#include <GL/glad.h>
+
 TextureManager textureManager;
 
 TextureManager::TextureManager()
@@ -72,8 +74,22 @@ void TextureManager::loadTexture(string name, sf::Vector2i subDiv)
     TextureData& data = textureMap[name];
     
     sf::Image tmpImage;
-    P<ResourceStream> stream = getResourceStream(name);
-    if (!stream) stream = getResourceStream(name + ".png");
+    P<ResourceStream> stream;
+    if (GLAD_GL_EXT_texture_compression_s3tc || GLAD_GL_OES_compressed_ETC1_RGB8_texture)
+    {
+        auto extension = name.substr(-4);
+
+        auto basename = extension == ".png" ? name.substr(0, -4) : name;
+        if (GLAD_GL_EXT_texture_compression_s3tc)
+            stream = getResourceStream("dds/" + basename + ".dds");
+        if (!stream && GLAD_GL_OES_compressed_ETC1_RGB8_texture)
+            stream = getResourceStream("es2/" + basename + ".ktx");
+    }
+    
+    if (!stream)
+        stream = getResourceStream(name);
+    if (!stream)
+        stream = getResourceStream(name + ".png");
     if (!stream || !tmpImage.loadFromStream(**stream))
     {
         LOG(WARNING) << "Failed to load texture: " << name;

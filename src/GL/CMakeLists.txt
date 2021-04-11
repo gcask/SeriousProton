@@ -3,7 +3,8 @@ project(glad)
 
 #---------------------------------File lists-----------------------------------
 set(source_files_relative
-	glad.c
+	$<IF:$<CONFIG:Debug>,debug/glad.c,release/glad.c>
+	$<IF:$<CONFIG:Debug>,debug/GL/glad.h,release/GL/glad.h>
 )
 set(source_files "")
 foreach(source_file_relative ${source_files_relative})
@@ -15,7 +16,9 @@ add_library(glad STATIC ${source_files})
 
 target_include_directories(glad
     PUBLIC
-        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/..>)
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/$<IF:$<CONFIG:Debug>,debug,release>>
+	PRIVATE
+		$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/$<IF:$<CONFIG:Debug>,debug,release>/GL>)
 
 #--------------------------------Installation----------------------------------
 install(

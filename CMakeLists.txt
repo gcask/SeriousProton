@@ -169,7 +169,7 @@ target_compile_options(seriousproton
 
 target_link_libraries(seriousproton
     PUBLIC 
-        box2d lua $<BUILD_INTERFACE:SFMLoverSDL>
+        box2d lua $<BUILD_INTERFACE:SFMLoverSDL> $<BUILD_INTERFACE:glad>
         "$<$<BOOL:${WIN32}>:wsock32>"
     PRIVATE $<BUILD_INTERFACE:opus>
     INTERFACE

@@ -43,6 +43,7 @@ set(SOURCES
 
 	Window/Implementation.cpp
 
+	stb/dds-ktx.h
 	stb/stb_rect_pack.h
 	stb/stb_image.h
 	stb/stb_truetype.h

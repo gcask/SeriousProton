@@ -38,6 +38,10 @@
 #define STBI_NO_STDIO
 #define STBI_ASSERT(x) SDL_assert(x)
 #include "SFML/stb/stb_image.h"
+
+#define DDSKTX_IMPLEMENT
+#include "SFML/stb/dds-ktx.h"
+
 #include <glm/ext/matrix_float4x4.hpp> // mat4x4
 #include <glm/ext/matrix_transform.hpp>
 #include <glm/ext/matrix_clip_space.hpp>
@@ -101,6 +105,13 @@ namespace std
 
 namespace
 {
+    void glad_debug_assert(const char* name, void* funcptr, int len_args, ...)
+    {
+        GLenum error_code = glad_glGetError();
+
+        SDL_assert(error_code == GL_NO_ERROR);
+    }
+
     class BufferCache
     {
     public:
@@ -822,8 +833,8 @@ void main()
                 stbtt_GetFontVMetrics(&font, &ascent, &descent, &lineGap);
                 auto lineHeight = scale * (ascent - descent + lineGap);
                 auto charWidth = scale * STBTT_POINT_SIZE(int32_t(characterSize));
-                atlas.size.x = ((characterSize + 4) * 16);
-                atlas.size.y = ((characterSize + 4) * 16);
+                atlas.size.x = ((characterSize + characterSize / 4) * 16);
+                atlas.size.y = ((characterSize + characterSize / 4) * 16);
                 for (; atlasData.empty();)
                 {
                     atlasData.resize(size_t(atlas.size.x) * atlas.size.y);
@@ -911,13 +922,6 @@ void main()
 #pragma endregion Glsl
 
 #pragma region Image
-    namespace
-    {
-        void ensureImgLoaded()
-        {
-            
-        }
-    }
     void Image::create(unsigned int width, unsigned int height, const Color& color)
     {
         reset();
@@ -953,29 +957,64 @@ void main()
         auto ops = rwops::fromStream(stream);
         if (!ops)
             return false;
+        if (GLAD_GL_EXT_texture_compression_s3tc || GLAD_GL_OES_compressed_ETC1_RGB8_texture)
+        {
+            byte_size = SDL_RWsize(ops);
+            pixels = static_cast<uint8_t*>(STBI_MALLOC(byte_size));
+            if (pixels)
+            {
+                if (SDL_RWread(ops, pixels, 1, byte_size) == byte_size)
+                {
+                    ddsktx_texture_info info{};
+                    ddsktx_error error{};
+                    if (ddsktx_parse(&info, pixels, byte_size, &error))
+                    {
+                        size.x = info.width;
+                        size.y = info.height;
+                        format = info.format;
+                        SDL_RWclose(ops);
+                        return true;
+                    }
+                }
+
+                STBI_FREE(pixels);
+                pixels = nullptr;
+                SDL_RWseek(ops, 0, RW_SEEK_SET);
+            }
+        }
         auto stbcallbacks = stb::forRWops();
         int width = 0, height = 0, components = 0;
 
         auto full_res = stbi_load_from_callbacks(&stbcallbacks, ops, &width, &height, nullptr, STBI_rgb_alpha);
         if (full_res)
         {
-            // quarter-res the image.
-            pixels = static_cast<uint8_t*>(STBI_MALLOC((width / 2) * (height / 2) * sizeof(uint32_t)));
-            if (pixels)
-            {
-                for (auto y = 0; y < height / 2; ++y)
-                {
-                    for (auto x = 0; x < width / 2; ++x)
-                    {
-                        SDL_memcpy4(pixels + sizeof(uint32_t) * (x + y * (width / 2)), full_res + sizeof(uint32_t) * (2 * x + 2 * y * width), 1);
-                    }
-                }
-                    
-            }
 
-            size.x = width / 2;
-            size.y = height / 2;
-            STBI_FREE(full_res);
+            if constexpr (false)
+            {
+                // quarter-res the image.
+                pixels = static_cast<uint8_t*>(STBI_MALLOC((width / 2) * (height / 2) * sizeof(uint32_t)));
+                if (pixels)
+                {
+                    for (auto y = 0; y < height / 2; ++y)
+                    {
+                        for (auto x = 0; x < width / 2; ++x)
+                        {
+                            SDL_memcpy4(pixels + sizeof(uint32_t) * (x + y * (width / 2)), full_res + sizeof(uint32_t) * (2 * x + 2 * y * width), 1);
+                        }
+                    }
+
+                }
+
+                size.x = width / 2;
+                size.y = height / 2;
+                stbi_image_free(full_res);
+            }
+            else
+            {
+                pixels = full_res;
+                size.x = width;
+                size.y = height;
+            }
         }
         else
         {
@@ -996,6 +1035,7 @@ void main()
     {
         stbi_image_free(pixels);
     }
+    Image::Image() = default;
     void Image::reset()
     {
         if (pixels)
@@ -1003,6 +1043,8 @@ void main()
             stbi_image_free(pixels);
             pixels = nullptr;
             size = { 0u, 0u };
+            byte_size = 0;
+            format = UINT32_MAX;
         }
     }
 #pragma endregion Image
@@ -1308,7 +1350,9 @@ void main()
             return;
         }
         SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE | SDL_GL_CONTEXT_PROFILE_ES);
+#if defined(GLAD_DEBUG)
         SDL_GL_SetAttribute(SDL_GL_CONTEXT_FLAGS, SDL_GL_CONTEXT_DEBUG_FLAG);
+#endif
         SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, settings.majorVersion);
         SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, settings.minorVersion);
         SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, settings.depthBits);
@@ -1349,6 +1393,10 @@ void main()
         if (!SDL_GL_GetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, &value))
             impl->settings.majorVersion = value;
         gladLoadGLES2Loader(SDL_GL_GetProcAddress);
+#if defined(GLAD_DEBUG)
+        glad_set_pre_callback(glad_debug_assert);
+        glad_set_post_callback(glad_debug_assert);
+#endif
         setTitle(title);
     }
     const ContextSettings& RenderWindow::getSettings() const
@@ -1848,11 +1896,22 @@ void main()
     }
 #pragma endregion Sprite
 #pragma region Text
+    constexpr GLenum element_type_for_size(size_t text_length)
+    {
+        text_length *= 4; // 4 vertices per glyph.
+        if (text_length <= 256)
+            return GL_UNSIGNED_BYTE;
+
+        if (text_length <= 65536)
+            return GL_UNSIGNED_SHORT;
+
+        return GL_UNSIGNED_INT;
+    }
     Text::Text(const String& string, const Font& font, unsigned int characterSize)
         :textLength{string.getSize()}
     {
         std::vector<VertexInfo> vertices;
-        std::vector<uint16_t> elements;
+        std::vector<uint32_t> elements;
 
         vertices.reserve(textLength * 4); // 4 vertices per glyph (1 quad)
         elements.reserve(textLength * 6); // 6 elements each (2 triangles)
@@ -1907,14 +1966,55 @@ void main()
         }
 
         // Upload
-        buffers[1] = cache.acquire(elements.size() * sizeof(uint16_t));
+
+        textLength = elements.size() / 6;
+        size_t element_size = [textLength = textLength]()
+        {
+            switch (element_type_for_size(textLength))
+            {
+            case GL_UNSIGNED_BYTE:
+                return sizeof(uint8_t);
+            case GL_UNSIGNED_SHORT:
+                return sizeof(uint16_t);
+            }
+
+            return sizeof(uint32_t);
+        }();
+
+        std::vector<uint8_t> transient;
+        const void* elements_ptr = [](auto& transient, const auto& elements, auto element_size) -> const void*
+        {
+            if (element_size == sizeof(uint32_t))
+                return elements.data();
+
+            if (element_size == sizeof(uint16_t))
+            {
+                transient.resize(elements.size() * sizeof(uint16_t));
+                auto ptr = reinterpret_cast<uint16_t*>(transient.data());
+                for (auto idx : elements)
+                    *ptr++ = static_cast<uint16_t>(idx);
+            }
+            else
+            {
+                SDL_assert(element_size == sizeof(uint8_t));
+                transient.resize(elements.size() * sizeof(uint8_t));
+                auto ptr = reinterpret_cast<uint8_t*>(transient.data());
+                for (auto idx : elements)
+                    *ptr++ = static_cast<uint8_t>(idx);
+            }
+
+            return transient.data();
+        }(transient, elements, element_size);
+
+        buffers[1] = cache.acquire(elements.size() * element_size);
         buffers[0] = cache.acquire(vertices.size() * sizeof(VertexInfo));
+
         {
             GLint currentEbo = 0;
             glChecked(glGetIntegerv(GL_ELEMENT_ARRAY_BUFFER_BINDING, &currentEbo));
             // update our EBO.
             glChecked(glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, buffers[1]));
-            glChecked(glBufferSubData(GL_ELEMENT_ARRAY_BUFFER, 0, elements.size() * sizeof(decltype(elements[0])), elements.data()));
+            glChecked(glBufferSubData(GL_ELEMENT_ARRAY_BUFFER, 0, elements.size() * element_size, elements_ptr));
             glChecked(glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, currentEbo));
         }
         {
@@ -1927,7 +2027,7 @@ void main()
         }
 
         texture = &atlas.tex;
-        textLength = elements.size() / 6;
+        
     }
 
     Text::~Text()
@@ -1986,7 +2086,7 @@ void main()
             auto texAttrib = guard.get().attribute("intex");
             glChecked(glEnableVertexAttribArray(texAttrib));
             glChecked(glVertexAttribPointer(texAttrib, 2, GL_FLOAT, GL_FALSE, vertexTypeSize, (GLvoid*)sizeof(Vector2f)));
-            glChecked(glDrawElements(GL_TRIANGLES, textLength * 6, GL_UNSIGNED_SHORT, (GLvoid*)0));
+            glChecked(glDrawElements(GL_TRIANGLES, textLength * 6, element_type_for_size(textLength), (GLvoid*)0));
             glChecked(glDisableVertexAttribArray(texAttrib));
             glChecked(glDisableVertexAttribArray(posAttrib));
         }
@@ -2060,7 +2160,24 @@ void main()
             ((area.left <= 0) && (area.top <= 0) && (area.width >= imageSize.x) && (area.height >= imageSize.y)))
         {
             size = image.getSize();
-            glChecked(glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, size.x, size.y, 0, GL_RGBA, GL_UNSIGNED_BYTE, image.data() + offset));
+            if (GLAD_GL_EXT_texture_compression_s3tc && image.getFormat() == DDSKTX_FORMAT_BC1 || image.getFormat() == DDSKTX_FORMAT_BC3)
+            {
+                ddsktx_texture_info info{};
+                if (ddsktx_parse(&info, image.data(), image.getByteSize()))
+                {
+                    auto gl_format = image.getFormat() == DDSKTX_FORMAT_BC1 ? GL_COMPRESSED_RGB_S3TC_DXT1_EXT : GL_COMPRESSED_RGBA_S3TC_DXT5_EXT;
+                    ddsktx_sub_data sub_data{};
+                    for (auto mip = 0; mip < 1; ++mip)
+                    {
+                        ddsktx_get_sub(&info, &sub_data, image.data(), image.getByteSize(), 0, 0, mip);
+                        glChecked(glCompressedTexImage2D(GL_TEXTURE_2D, mip, gl_format, sub_data.width, sub_data.height, 0, sub_data.size_bytes, sub_data.buff));
+
+                    }
+                    
+                }
+            }
+            else
+                glChecked(glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, size.x, size.y, 0, GL_RGBA, GL_UNSIGNED_BYTE, image.data() + offset));
         }
         else
         {
