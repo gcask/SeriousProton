@@ -81,9 +81,9 @@ void TextureManager::loadTexture(string name, sf::Vector2i subDiv)
 
         auto basename = extension == ".png" ? name.substr(0, -4) : name;
         if (GLAD_GL_EXT_texture_compression_s3tc)
-            stream = getResourceStream("dds/" + basename + ".dds");
+            stream = getResourceStream(basename + ".dds");
         if (!stream && GLAD_GL_OES_compressed_ETC1_RGB8_texture)
-            stream = getResourceStream("es2/" + basename + ".ktx");
+            stream = getResourceStream(basename + ".ktx");
     }
     
     if (!stream)
