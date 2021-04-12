@@ -2196,15 +2196,19 @@ void main()
             {
                 switch (ddsktx_format)
                 {
+                case UINT32_MAX:
+                    return GL_NONE;
                 case DDSKTX_FORMAT_BC1:
                     return GL_COMPRESSED_RGB_S3TC_DXT1_EXT;
                 case DDSKTX_FORMAT_BC3:
                     return GL_COMPRESSED_RGBA_S3TC_DXT5_EXT;
                 case DDSKTX_FORMAT_ETC1:
                     return GL_ETC1_RGB8_OES;
+                case DDSKTX_FORMAT_RG8:
+                    return GL_LUMINANCE_ALPHA;
                 }
 
-                return GL_NONE;
+                return GL_RGBA;
             }();
 
             if (gl_format != GL_NONE)
@@ -2213,10 +2217,13 @@ void main()
                 if (ddsktx_parse(&info, image.data(), image.getByteSize()))
                 {
                     ddsktx_sub_data sub_data{};
-                    for (auto mip = 0; mip < 1; ++mip)
+                    for (auto mip = 0; mip < info.num_mips; ++mip)
                     {
                         ddsktx_get_sub(&info, &sub_data, image.data(), image.getByteSize(), 0, 0, mip);
-                        glCompressedTexImage2D(GL_TEXTURE_2D, mip, gl_format, sub_data.width, sub_data.height, 0, sub_data.size_bytes, sub_data.buff);
+                        if (ddsktx_format_compressed(static_cast<ddsktx_format>(image.getFormat())))
+                            glCompressedTexImage2D(GL_TEXTURE_2D, mip, gl_format, sub_data.width, sub_data.height, 0, sub_data.size_bytes, sub_data.buff);
+                        else
+                            glTexImage2D(GL_TEXTURE_2D, mip, gl_format, sub_data.width, sub_data.height, 0, gl_format, GL_UNSIGNED_BYTE, sub_data.buff);
                     }
                 }
             }
