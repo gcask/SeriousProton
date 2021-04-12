@@ -992,7 +992,7 @@ void main()
         auto ops = rwops::fromStream(stream);
         if (!ops)
             return false;
-        if (GLAD_GL_EXT_texture_compression_s3tc || GLAD_GL_OES_compressed_ETC1_RGB8_texture)
+        if (GLAD_GL_EXT_texture_compression_s3tc || GLAD_GL_KHR_texture_compression_astc_ldr)
         {
             byte_size = SDL_RWsize(ops);
             pixels = static_cast<uint8_t*>(STBI_MALLOC(byte_size));
@@ -2205,8 +2205,8 @@ void main()
                     return GL_COMPRESSED_RGB_S3TC_DXT1_EXT;
                 case DDSKTX_FORMAT_BC3:
                     return GL_COMPRESSED_RGBA_S3TC_DXT5_EXT;
-                case DDSKTX_FORMAT_ETC1:
-                    return GL_ETC1_RGB8_OES;
+                case DDSKTX_FORMAT_ASTC8x6:
+                    return GL_COMPRESSED_RGBA_ASTC_8x6_KHR;
                 case DDSKTX_FORMAT_RG8:
                     return GL_LUMINANCE_ALPHA;
                 }
