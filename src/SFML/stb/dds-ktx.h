@@ -738,6 +738,8 @@ static const ddsktx__block_info k__block_info[] =
 #define DDSKTX__KTX_RGB9_E5                                   0x8C3D
 #define DDSKTX__KTX_R11F_G11F_B10F                            0x8C3A
 
+#define DDSKTX__KTX_A8L8                                      0x8045
+
 #define DDSKTX__KTX_ZERO                                      0
 #define DDSKTX__KTX_RED                                       0x1903
 #define DDSKTX__KTX_ALPHA                                     0x1906
@@ -830,6 +832,7 @@ static const ddsktx__ktx_format_info2 k__translate_ktx_fmt2[] =
     { DDSKTX__KTX_RGB,                          DDSKTX_FORMAT_RGB8  },
     { DDSKTX__KTX_RGBA,                         DDSKTX_FORMAT_RGBA8 },
     { DDSKTX__KTX_COMPRESSED_RGB_S3TC_DXT1_EXT, DDSKTX_FORMAT_BC1   },
+    { DDSKTX__KTX_A8L8,                         DDSKTX_FORMAT_RG8 },
 };
 
 typedef struct ddsktx__format_info

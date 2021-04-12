@@ -344,16 +344,15 @@ namespace sf
                 if (bounded.empty())
                 {
 #ifndef NDEBUG
-                    glBindBuffer(target, GL_NONE);
+                    glBindBuffer(Target, GL_NONE);
 #endif
                 }
                 else if (bounded.top() != bound)
-                    glBindBuffer(target, bounded.top());
+                    glBindBuffer(Target, bounded.top());
             }
 
             uint32_t get() const { return buffer; }
         private:
-            uint32_t target = 0;
             uint32_t buffer = 0;
         };
 
@@ -1010,6 +1009,10 @@ void main()
                         format = info.format;
                         SDL_RWclose(ops);
                         return true;
+                    }
+                    else
+                    {
+                        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "Failed to load image: %s", error.msg);
                     }
                 }
 
