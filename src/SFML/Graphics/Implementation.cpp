@@ -22,6 +22,8 @@
 #include "Vertex.hpp"
 #include "View.hpp"
 
+#include <stack>
+
 #include "GL/glad.h"
 
 #include "SDL.h"
@@ -82,27 +84,6 @@ namespace std
     };
 }
 
-#ifndef CHECKED_GL
-#ifndef NDEBUG
-#define CHECKED_GL 1
-#else
-#define CHECKED_GL 0
-#endif
-#endif
-
-#if CHECKED_GL
-#define glChecked(call) \
-    do { \
-        auto beforeError = glGetError(); \
-        SDL_assert(beforeError == GL_NO_ERROR); \
-        call; \
-        auto afterError = glGetError(); \
-        SDL_assert(afterError == GL_NO_ERROR); \
-    } while(false)
-#else
-#define glChecked(call) call
-#endif
-
 namespace
 {
     void glad_debug_assert(const char* name, void* funcptr, int len_args, ...)
@@ -111,143 +92,6 @@ namespace
 
         SDL_assert(error_code == GL_NO_ERROR);
     }
-
-    class BufferCache
-    {
-    public:
-        struct Entry
-        {
-            constexpr Entry(uint32_t id, size_t size)
-                :id{ id }, size{ size }
-            {}
-
-            Entry() noexcept = default;
-            Entry(const Entry&) = delete;
-            Entry& operator=(const Entry&) = delete;
-
-            Entry(Entry&& other) noexcept
-                :id{other.id}, size{other.size}
-            {
-                other.id = 0;
-                other.size = 0;
-            }
-
-            Entry& operator =(Entry&& other) noexcept
-            {
-                if (this != &other)
-                {
-                    id = other.id;
-                    size = other.size;
-                    other.id = 0;
-                    other.size = 0;
-                }
-
-                return *this;
-            }
-
-            uint32_t id = 0;
-            size_t size = 0;
-        };
-
-        uint32_t acquire(size_t size)
-        {
-            // Do we have one that fits the bill?
-            Entry needle{ 0, size };
-
-            do
-            {
-                auto candidate = std::lower_bound(std::begin(freelist), std::end(freelist), needle, [](const auto& lhs, const auto& rhs) { return lhs.size < rhs.size; });
-
-                if (candidate != std::end(freelist))
-                {
-                    candidate->size = size;
-                    actives.emplace_back(std::move(*candidate));
-                    freelist.erase(candidate);
-
-                    return actives.back().id;
-                }
-
-                // Do we have an empty buffer?
-                candidate = std::find_if(std::begin(freelist), std::end(freelist), [](const auto& entry) { return entry.size == 0; });
-                
-                if (candidate != std::end(freelist))
-                {
-                    // fill and return
-                    actives.emplace_back(std::move(*candidate));
-                    freelist.erase(candidate);
-                    int32_t current = 0;
-                    glChecked(glGetIntegerv(GL_ARRAY_BUFFER_BINDING, &current));
-                    glChecked(glBindBuffer(GL_ARRAY_BUFFER, actives.back().id));
-                    // Initialize
-                    actives.back().size = size;
-                    glChecked(glBufferData(GL_ARRAY_BUFFER, actives.back().size, nullptr, GL_DYNAMIC_DRAW));
-                    glChecked(glBindBuffer(GL_ARRAY_BUFFER, current));
-
-                    return actives.back().id;
-                }
-
-                // No buffer found - generate new ones and retry.
-                generate();
-
-            } while (true);
-        }
-
-        void release(uint32_t entry)
-        {
-            auto item = std::find_if(std::begin(actives), std::end(actives), [entry](const auto& item) { return item.id == entry; });
-            if (item != std::end(actives))
-            {
-                pendings.emplace_back(std::move(*item));
-                actives.erase(item);
-            }
-        }
-
-        size_t getSize(uint32_t entry) const
-        {
-            if (entry == 0)
-                return 0;
-            auto item = std::find_if(std::begin(actives), std::end(actives), [entry](const auto& item) { return item.id == entry; });
-            return item != std::end(actives) ? item->size : 0;
-        }
-
-        void initialize(size_t initial_count = 64)
-        {
-            generate(initial_count);
-        }
-
-        void reset()
-        {
-            SDL_assert(actives.empty());
-            auto pending_size = pendings.size();
-            freelist.reserve(freelist.size() + pending_size);
-            for (auto& entry : pendings)
-                freelist.emplace_back(std::move(entry));
-            pendings.clear();
-            pendings.reserve(pending_size);
-            std::sort(std::begin(freelist), std::end(freelist), [](const auto& lhs, const auto& rhs) { return lhs.size < rhs.size; });
-        }
-
-        void shutdown()
-        {
-        }
-    private:
-        void generate(size_t count = 64)
-        {
-            std::vector<uint32_t> buffers(count, 0);
-            glChecked(glGenBuffers(buffers.size(), buffers.data()));
-
-            freelist.reserve(freelist.size() + buffers.size());
-
-            for (auto buffer : buffers)
-            {
-                freelist.emplace_back(buffer, 0);
-            }
-        }
-       
-        std::vector<Entry> freelist;
-        std::vector<Entry> actives;
-        std::vector<Entry> pendings;
-    } cache;
 }
 
 namespace sf
@@ -324,34 +168,44 @@ namespace sf
         }
         struct ScopedShader final
         {
+            static inline std::stack<uint32_t> bounded{};
             explicit ScopedShader(Shader& shader)
                 :guarded{shader}
             {
-                glChecked(glGetIntegerv(GL_CURRENT_PROGRAM, &previouslyBound));
-                Shader::bind(&shader);
+                auto wantsToBind = shader.getNativeHandle();
+                if (bounded.empty() || bounded.top() != wantsToBind)
+                    Shader::bind(&shader);
+                bounded.push(wantsToBind);
             }
 
             ~ScopedShader()
             {
-                glChecked(glUseProgram(previouslyBound));
+                SDL_assert(!bounded.empty());
+                auto currentlyBound = bounded.top();
+                bounded.pop();
+                if (bounded.empty())
+                    glUseProgram(GL_NONE);
+                else if (bounded.top() != currentlyBound)
+                    glUseProgram(bounded.top());
             }
             Shader& get() const { return guarded; }
         private:
             Shader& guarded;
-            GLint previouslyBound = 0;
         };
 
         struct ScopedTexture final
         {
+            static inline std::stack<uint32_t> bounded{};
             explicit ScopedTexture(const Texture* texture)
                 :guarded{ texture }
             {
                 auto wantsToBind = texture ? texture->glObject : GL_NONE;
-                glChecked(glGetIntegerv(GL_TEXTURE_BINDING_2D, &previouslyBound));
-                if (previouslyBound != wantsToBind)
+                if (bounded.empty() || bounded.top() != wantsToBind)
                 {
                     Texture::bind(guarded);
                 }
+
+                bounded.push(wantsToBind);
             }
             explicit ScopedTexture(const Texture& texture)
                 :ScopedTexture(&texture)
@@ -359,10 +213,18 @@ namespace sf
             }
             ~ScopedTexture()
             {
-                auto currentlyBound = guarded ? guarded->glObject : GL_NONE;
-                if (previouslyBound != currentlyBound)
+                auto currentlyBound = bounded.top();
+                bounded.pop();
+
+                if (bounded.empty())
                 {
-                    glChecked(glBindTexture(GL_TEXTURE_2D, previouslyBound));
+#ifndef NDEBUG
+                    glBindTexture(GL_TEXTURE_2D, GL_NONE);
+#endif
+                }
+                else if (currentlyBound != bounded.top())
+                {
+                    glBindTexture(GL_TEXTURE_2D, bounded.top());
                 }
             }
             const Texture* get() const { return guarded; }
@@ -373,15 +235,16 @@ namespace sf
 
         struct ScopedRenderTarget final
         {
+            static inline std::stack<uint32_t> bounded{};
             explicit ScopedRenderTarget(const RenderTarget* texture)
                 :guarded{ texture }
             {
                 auto wantsToBind = texture ? texture->glObject : GL_NONE;
-                glChecked(glGetIntegerv(GL_FRAMEBUFFER_BINDING, &previouslyBound));
-                if (previouslyBound != wantsToBind)
+                if (bounded.empty() || bounded.top() != wantsToBind)
                 {
-                    glChecked(glBindFramebuffer(GL_FRAMEBUFFER, wantsToBind));
+                    glBindFramebuffer(GL_FRAMEBUFFER, wantsToBind);
                 }
+                bounded.push(wantsToBind);
             }
 
             explicit ScopedRenderTarget(const RenderTarget& texture)
@@ -390,74 +253,247 @@ namespace sf
 
             ~ScopedRenderTarget()
             {
-                auto currentlyBound = guarded ? guarded->glObject : GL_NONE;
-                if (previouslyBound != currentlyBound)
+                auto currentlyBound = bounded.top();
+                bounded.pop();
+                
+                if (bounded.empty())
                 {
-                    glChecked(glBindFramebuffer(GL_FRAMEBUFFER, previouslyBound));
+#ifndef NDEBUG
+                    glBindFramebuffer(GL_FRAMEBUFFER, GL_NONE);
+#endif
                 }
+                else if (currentlyBound != bounded.top())
+                    glBindFramebuffer(GL_FRAMEBUFFER, bounded.top());
             }
             const RenderTarget* get() const { return guarded; }
         private:
             const RenderTarget* guarded = nullptr;
-            GLint previouslyBound = 0;
         };
 
+        bool operator != (const BlendMode& lhs, const BlendMode& rhs)
+        {
+            return lhs.alpha.blend != rhs.alpha.blend
+                || lhs.alpha.dst != rhs.alpha.dst
+                || lhs.alpha.src != rhs.alpha.src
+                || lhs.color.blend != rhs.color.blend
+                || lhs.color.dst != rhs.color.dst
+                || lhs.color.src != rhs.color.src;
+        }
         struct ScopedBlending final
         {
+            static inline std::stack<BlendMode> bounded{};
         public:
             explicit ScopedBlending(BlendMode mode)
+                :current{ mode }
             {
-                glChecked(wasBlending = glIsEnabled(GL_BLEND));
-                if (!wasBlending)
+                if (bounded.empty() || bounded.top() != current)
                 {
-                    glChecked(glEnable(GL_BLEND));
+                    if (bounded.empty())
+                    {
+                        glEnable(GL_BLEND);
+                    }
+
+                    glBlendFuncSeparate(
+                        gl::blendfactor_cast(mode.color.src), gl::blendfactor_cast(mode.color.dst),
+                        gl::blendfactor_cast(mode.alpha.src), gl::blendfactor_cast(mode.alpha.dst)
+                    );
+                    
+                    glBlendEquationSeparate(
+                        gl::blendequation_cast(mode.color.blend),
+                        gl::blendequation_cast(mode.alpha.blend)
+                    );
                 }
-                else
-                {
-                    // Save state.
-                    glChecked(glGetIntegerv(GL_BLEND_SRC_RGB, &srcRGB));
-                    glChecked(glGetIntegerv(GL_BLEND_DST_RGB, &dstRGB));
-                    glChecked(glGetIntegerv(GL_BLEND_SRC_ALPHA, &srcAlpha));
-                    glChecked(glGetIntegerv(GL_BLEND_DST_ALPHA, &dstAlpha));
-                    glChecked(glGetIntegerv(GL_BLEND_EQUATION_RGB, &modeRGB));
-                    glChecked(glGetIntegerv(GL_BLEND_EQUATION_ALPHA, &modeAlpha));
-                }
-                glChecked(glBlendFuncSeparate(
-                    gl::blendfactor_cast(mode.color.src), gl::blendfactor_cast(mode.color.dst),
-                    gl::blendfactor_cast(mode.alpha.src), gl::blendfactor_cast(mode.alpha.dst)
-                ));
-                glChecked(glBlendEquationSeparate(
-                    gl::blendequation_cast(mode.color.blend),
-                    gl::blendequation_cast(mode.alpha.blend)
-                ));
+
+                bounded.push(current);
             }
 
             ~ScopedBlending()
             {
-                if (!wasBlending)
+                bounded.pop();
+                if (bounded.empty())
                 {
-                    glChecked(glDisable(GL_BLEND));
+                    glDisable(GL_BLEND);
                 }
-                else
+                else if (current != bounded.top())
                 {
-                    glChecked(glBlendFuncSeparate(srcRGB, dstRGB, srcAlpha, dstAlpha));
-                    glChecked(glBlendEquationSeparate(modeRGB, modeAlpha));
+
                 }
             }
         private:
             BlendMode current;
-            // Func
-            GLint srcRGB = GL_NONE;
-            GLint dstRGB = GL_NONE;
-            GLint srcAlpha = GL_NONE;
-            GLint dstAlpha = GL_NONE;
-            // Eq
-            GLint modeRGB = GL_NONE;
-            GLint modeAlpha = GL_NONE;
-            bool wasBlending = false;
         };
 
-        
+        template<uint32_t Target>
+        class ScopedBufferBinding final
+        {
+            static inline std::stack<uint32_t> bounded{};
+        public:
+            explicit ScopedBufferBinding(uint32_t buffer)
+                :buffer{buffer}
+            {
+                if (bounded.empty() || bounded.top() != buffer)
+                    glBindBuffer(Target, buffer);
+                bounded.push(buffer);
+            }
+
+            ~ScopedBufferBinding()
+            {
+                auto bound = bounded.top();
+                bounded.pop();
+
+                if (bounded.empty())
+                {
+#ifndef NDEBUG
+                    glBindBuffer(target, GL_NONE);
+#endif
+                }
+                else if (bounded.top() != bound)
+                    glBindBuffer(target, bounded.top());
+            }
+
+            uint32_t get() const { return buffer; }
+        private:
+            uint32_t target = 0;
+            uint32_t buffer = 0;
+        };
+
+        template<uint32_t Target>
+        class BufferCache
+        {
+        public:
+            struct Entry
+            {
+                constexpr Entry(uint32_t id, size_t size)
+                    :id{ id }, size{ size }
+                {}
+
+                Entry() noexcept = default;
+                Entry(const Entry&) = delete;
+                Entry& operator=(const Entry&) = delete;
+
+                Entry(Entry&& other) noexcept
+                    :id{ other.id }, size{ other.size }
+                {
+                    other.id = 0;
+                    other.size = 0;
+                }
+
+                Entry& operator =(Entry&& other) noexcept
+                {
+                    if (this != &other)
+                    {
+                        id = other.id;
+                        size = other.size;
+                        other.id = 0;
+                        other.size = 0;
+                    }
+
+                    return *this;
+                }
+
+                uint32_t id = 0;
+                size_t size = 0;
+            };
+
+            uint32_t acquire(size_t size)
+            {
+                // Do we have one that fits the bill?
+                Entry needle{ 0, size };
+
+                do
+                {
+                    auto candidate = std::lower_bound(std::begin(freelist), std::end(freelist), needle, [](const auto& lhs, const auto& rhs) { return lhs.size < rhs.size; });
+
+                    if (candidate != std::end(freelist))
+                    {
+                        candidate->size = size;
+                        actives.emplace_back(std::move(*candidate));
+                        freelist.erase(candidate);
+
+                        return actives.back().id;
+                    }
+
+                    // Do we have an empty buffer?
+                    candidate = std::find_if(std::begin(freelist), std::end(freelist), [](const auto& entry) { return entry.size == 0; });
+
+                    if (candidate != std::end(freelist))
+                    {
+                        // fill and return
+                        actives.emplace_back(std::move(*candidate));
+                        freelist.erase(candidate);
+
+                        ScopedBufferBinding<Target> buffer{ actives.back().id };
+                        // Initialize
+                        actives.back().size = size;
+                        glBufferData(Target, actives.back().size, nullptr, GL_DYNAMIC_DRAW);
+
+                        return actives.back().id;
+                    }
+
+                    // No buffer found - generate new ones and retry.
+                    generate();
+
+                } while (true);
+            }
+
+            void release(uint32_t entry)
+            {
+                auto item = std::find_if(std::begin(actives), std::end(actives), [entry](const auto& item) { return item.id == entry; });
+                if (item != std::end(actives))
+                {
+                    pendings.emplace_back(std::move(*item));
+                    actives.erase(item);
+                }
+            }
+
+            size_t getSize(uint32_t entry) const
+            {
+                if (entry == 0)
+                    return 0;
+                auto item = std::find_if(std::begin(actives), std::end(actives), [entry](const auto& item) { return item.id == entry; });
+                return item != std::end(actives) ? item->size : 0;
+            }
+
+            void initialize(size_t initial_count = 64)
+            {
+                generate(initial_count);
+            }
+
+            void reset()
+            {
+                SDL_assert(actives.empty());
+                auto pending_size = pendings.size();
+                freelist.reserve(freelist.size() + pending_size);
+                for (auto& entry : pendings)
+                    freelist.emplace_back(std::move(entry));
+                pendings.clear();
+                pendings.reserve(pending_size);
+                std::sort(std::begin(freelist), std::end(freelist), [](const auto& lhs, const auto& rhs) { return lhs.size < rhs.size; });
+            }
+
+            void shutdown()
+            {
+            }
+        private:
+            void generate(size_t count = 64)
+            {
+                std::vector<uint32_t> buffers(count, 0);
+                glGenBuffers(buffers.size(), buffers.data());
+
+                freelist.reserve(freelist.size() + buffers.size());
+
+                for (auto buffer : buffers)
+                {
+                    freelist.emplace_back(buffer, 0);
+                }
+            }
+
+            std::vector<Entry> freelist;
+            std::vector<Entry> actives;
+            std::vector<Entry> pendings;
+        };
+        BufferCache<GL_ARRAY_BUFFER> cache_vbo;
+        BufferCache<GL_ARRAY_BUFFER> cache_ebo;
 
         constexpr const char vertexShader[] = R"glsl(#version 100
 attribute vec2 position;
@@ -833,8 +869,8 @@ void main()
                 stbtt_GetFontVMetrics(&font, &ascent, &descent, &lineGap);
                 auto lineHeight = scale * (ascent - descent + lineGap);
                 auto charWidth = scale * STBTT_POINT_SIZE(int32_t(characterSize));
-                atlas.size.x = ((characterSize + characterSize / 4) * 16);
-                atlas.size.y = ((characterSize + characterSize / 4) * 16);
+                atlas.size.x = ((characterSize + std::max(4u, characterSize / 4)) * 16);
+                atlas.size.y = ((characterSize + std::max(4u, characterSize / 4)) * 16);
                 for (; atlasData.empty();)
                 {
                     atlasData.resize(size_t(atlas.size.x) * atlas.size.y);
@@ -856,9 +892,9 @@ void main()
 
                 // Upload to GPU.
                 SDL_assert(atlas.tex.glObject == GL_NONE);
-                glChecked(glGenTextures(1, &atlas.tex.glObject));
+                glGenTextures(1, &atlas.tex.glObject);
                 ScopedTexture guard{ atlas.tex };
-                glChecked(glTexImage2D(GL_TEXTURE_2D, 0, GL_ALPHA, atlas.size.x, atlas.size.y, 0, GL_ALPHA, GL_UNSIGNED_BYTE, atlasData.data()));
+                glTexImage2D(GL_TEXTURE_2D, 0, GL_ALPHA, atlas.size.x, atlas.size.y, 0, GL_ALPHA, GL_UNSIGNED_BYTE, atlasData.data());
                 atlas.tex.setSmooth(true);
                 atlas.tex.setRepeated(true);
                 atlas.tex.forceUpdate();
@@ -1099,7 +1135,7 @@ void main()
 #pragma region RenderTarget
     RenderTarget::~RenderTarget()
     {
-        glChecked(glDeleteFramebuffers(1, &glObject));
+        glDeleteFramebuffers(1, &glObject);
     }
     sf::Vector2u RenderTarget::getSize() const
     {
@@ -1127,8 +1163,8 @@ void main()
     void RenderTarget::clear(const Color& color)
     {
         ScopedRenderTarget guard{ this };
-        glChecked(glClearColor(color.r / 255.f, color.g / 255.f, color.b / 255.f, color.a / 255.f));
-        glChecked(glClear(GL_COLOR_BUFFER_BIT));
+        glClearColor(color.r / 255.f, color.g / 255.f, color.b / 255.f, color.a / 255.f);
+        glClear(GL_COLOR_BUFFER_BIT);
     }
 
     void RenderTarget::draw(const Drawable& drawable, const RenderStates& states)
@@ -1145,7 +1181,7 @@ void main()
         );
         // flip "vertical" y axis.
         auto top = size.y - (viewportGl.top + viewportGl.height);
-        glChecked(glViewport(viewportGl.left, top, viewportGl.width, viewportGl.height));
+        glViewport(viewportGl.left, top, viewportGl.width, viewportGl.height);
         ScopedBlending blending{ states.blend };
         ScopedTexture stateTex{ states.texture };
         drawable.draw(*this, states);
@@ -1187,8 +1223,8 @@ void main()
     }
     void RenderTarget::pushGLStates()
     {
-        glChecked(glDisable(GL_DEPTH_TEST));
-        glChecked(glDisable(GL_CULL_FACE));
+        glDisable(GL_DEPTH_TEST);
+        glDisable(GL_CULL_FACE);
     }
 
     void RenderTarget::resetGLStates()
@@ -1196,8 +1232,8 @@ void main()
         Texture::bind(nullptr);
         Shader::bind(nullptr);
 
-        glChecked(glDisable(GL_DEPTH_TEST));
-        glChecked(glDisable(GL_CULL_FACE));
+        glDisable(GL_DEPTH_TEST);
+        glDisable(GL_CULL_FACE);
     }
 #pragma endregion RenderTarget
 #pragma region RenderTexture
@@ -1207,41 +1243,41 @@ void main()
     }
     RenderTexture::~RenderTexture()
     {
-        glChecked(glDeleteRenderbuffers(1, &rbo));
+        glDeleteRenderbuffers(1, &rbo);
     }
     bool RenderTexture::create(unsigned int width, unsigned int height, bool depthBuffer)
     {
         if (glObject == GL_NONE)
         {
-            glChecked(glGenFramebuffers(1, &glObject));
-            glChecked(glGenTextures(1, &texture.glObject));
+            glGenFramebuffers(1, &glObject);
+            glGenTextures(1, &texture.glObject);
         }
 
         ScopedRenderTarget guard{ this };
         ScopedTexture guardTex{ texture };
-        glChecked(glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr));
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
         texture.size = { width, height };
         texture.forceUpdate();
-        glChecked(glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, texture.glObject, 0));
+        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, texture.glObject, 0);
         if (depthBuffer)
         {
             if (rbo == GL_NONE)
             {
-                glChecked(glGenRenderbuffers(1, &rbo));
-                glChecked(glBindRenderbuffer(GL_RENDERBUFFER, rbo));
-                glChecked(glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH_COMPONENT, width, height));
-                glChecked(glBindRenderbuffer(GL_RENDERBUFFER, GL_NONE));
+                glGenRenderbuffers(1, &rbo);
+                glBindRenderbuffer(GL_RENDERBUFFER, rbo);
+                glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH_COMPONENT, width, height);
+                glBindRenderbuffer(GL_RENDERBUFFER, GL_NONE);
             }
 
-            glChecked(glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, rbo));
+            glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, rbo);
         }
         else if (rbo != GL_NONE)
         {
-            glChecked(glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, GL_NONE));
+            glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, GL_NONE);
         }
 
         auto status = GL_NONE;
-        glChecked(status = glCheckFramebufferStatus(GL_FRAMEBUFFER));
+        status = glCheckFramebufferStatus(GL_FRAMEBUFFER);
         return status == GL_FRAMEBUFFER_COMPLETE;
     }
     void RenderTexture::setRepeated(bool repeated)
@@ -1321,7 +1357,8 @@ void main()
         if (impl)
         {
             SDL_GL_SwapWindow(impl->window);
-            cache.reset();
+            cache_vbo.reset();
+            cache_ebo.reset();
             if (impl->lastStart)
             {
                 // Do we need to throttle?
@@ -1334,7 +1371,8 @@ void main()
     }
     void RenderWindow::close()
     {
-        cache.shutdown();
+        cache_vbo.shutdown();
+        cache_ebo.shutdown();
         impl = std::make_unique<Impl>();
     }
 
@@ -1444,18 +1482,18 @@ void main()
             program = shader->program;
             for (auto i = 0; i < shader->currentTextureUnit; ++i)
             {
-                glChecked(glActiveTexture(GL_TEXTURE0 + i));
-                glChecked(glBindTexture(GL_TEXTURE_2D, shader->textures[i]));
+                glActiveTexture(GL_TEXTURE0 + i);
+                glBindTexture(GL_TEXTURE_2D, shader->textures[i]);
             }
             if (shader->currentTextureUnit > 1)
             {
-                glChecked(glActiveTexture(GL_TEXTURE0));
+                glActiveTexture(GL_TEXTURE0);
             }
             shader->currentTextureUnit = 0;
         }
 
 
-        glChecked(glUseProgram(program));
+        glUseProgram(program);
     }
     bool Shader::loadFromFile(const std::string&, Type)
     {
@@ -1509,18 +1547,18 @@ void main()
                 code[length] = '\0';
 
                 const char* sources[1] = { code.data() };
-                glChecked(glShaderSource(shader, 1, sources, nullptr));
+                glShaderSource(shader, 1, sources, nullptr);
             }
-            glChecked(glCompileShader(shader));
+            glCompileShader(shader);
             GLint status = GL_FALSE;
-            glChecked(glGetShaderiv(shader, GL_COMPILE_STATUS, &status));
+            glGetShaderiv(shader, GL_COMPILE_STATUS, &status);
             SDL_assert(status == GL_TRUE);
             if (status == GL_FALSE)
             {
                 GLsizei logLength = 0;
-                glChecked(glGetShaderiv(shader, GL_INFO_LOG_LENGTH, &logLength));
+                glGetShaderiv(shader, GL_INFO_LOG_LENGTH, &logLength);
                 std::vector<char> compileLog(size_t(logLength) + 1);
-                glChecked(glGetShaderInfoLog(shader, compileLog.size(), nullptr, compileLog.data()));
+                glGetShaderInfoLog(shader, compileLog.size(), nullptr, compileLog.data());
                 compileLog[logLength] = '\0';
                 SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Shader compilation failed: %s", compileLog.data());
             }
@@ -1531,28 +1569,28 @@ void main()
     bool Shader::loadFromStream(InputStream& vertexShaderStream, InputStream& fragmentShaderStream)
     {
         SDL_assert(program == 0);
-        glChecked(vertexShader = glCreateShader(GL_VERTEX_SHADER));
+        vertexShader = glCreateShader(GL_VERTEX_SHADER);
         if (!compileShader(vertexShader, vertexShaderStream))
         {
-            glChecked(glDeleteShader(vertexShader));
+            glDeleteShader(vertexShader);
             vertexShader = 0;
             return false;
         }
 
-        glChecked(fragmentShader = glCreateShader(GL_FRAGMENT_SHADER));
+        fragmentShader = glCreateShader(GL_FRAGMENT_SHADER);
         if (!compileShader(fragmentShader, fragmentShaderStream))
         {
-            glChecked(glDeleteShader(fragmentShader));
+            glDeleteShader(fragmentShader);
             fragmentShader = 0;
-            glChecked(glDeleteShader(vertexShader));
+            glDeleteShader(vertexShader);
             vertexShader = 0;
             return false;
         }
 
-        glChecked(program = glCreateProgram());
-        glChecked(glAttachShader(program, vertexShader));
-        glChecked(glAttachShader(program, fragmentShader));
-        glChecked(glLinkProgram(program));
+        program = glCreateProgram();
+        glAttachShader(program, vertexShader);
+        glAttachShader(program, fragmentShader);
+        glLinkProgram(program);
 
         return true;
     }
@@ -1561,7 +1599,7 @@ void main()
         if (!program)
             return -1;
         int32_t location = -1;
-        glChecked(location = glGetAttribLocation(program, name));
+        location = glGetAttribLocation(program, name);
         return location;
     }
 
@@ -1569,15 +1607,15 @@ void main()
     void Shader::setUniform(const std::string& name, const bool& value)
     {
         GLint location = 0;
-        glChecked(location = glGetUniformLocation(program, name.c_str()));
-        glChecked(glUniform1i(location, value));
+        location = glGetUniformLocation(program, name.c_str());
+        glUniform1i(location, value);
     }
     template<>
     void Shader::setUniform(const std::string& name, const float& value)
     {
         GLint location = 0;
-        glChecked(location = glGetUniformLocation(program, name.c_str()));
-        glChecked(glUniform1f(location, value));
+        location = glGetUniformLocation(program, name.c_str());
+        glUniform1f(location, value);
     }
     // SFML
     template<>
@@ -1589,23 +1627,23 @@ void main()
     void Shader::setUniform(const std::string& name, const Vector2f& value)
     {
         GLint location = -1;
-        glChecked(location = glGetUniformLocation(program, name.c_str()));
-        glChecked(glUniform2f(location, value.x, value.y));
+        location = glGetUniformLocation(program, name.c_str());
+        glUniform2f(location, value.x, value.y);
     }
     template<>
     void Shader::setUniform(const std::string& name, const Vector3f& value)
     {
         GLint location = -1;
-        glChecked(location = glGetUniformLocation(program, name.c_str()));
-        glChecked(glUniform3f(location, value.x, value.y, value.z));
+        location = glGetUniformLocation(program, name.c_str());
+        glUniform3f(location, value.x, value.y, value.z);
     }
     template<>
     void Shader::setUniform(const std::string& name, const Texture& value)
     {
-        glChecked(glActiveTexture(GL_TEXTURE0 + currentTextureUnit));
+        glActiveTexture(GL_TEXTURE0 + currentTextureUnit);
         Texture::bind(&value);
         textures[currentTextureUnit++] = value.glObject;
-        glChecked(glActiveTexture(GL_TEXTURE0));
+        glActiveTexture(GL_TEXTURE0);
     }
     template<>
     void Shader::setUniform(const std::string& name, const Glsl::Vec4& value)
@@ -1617,39 +1655,40 @@ void main()
     void Shader::setUniform(const std::string& name, const glm::mat4&matrix)
     {
         GLint location = 0;
-        glChecked(location = glGetUniformLocation(program, name.c_str()));
-        glChecked(glUniformMatrix4fv(location, 1, GL_FALSE, glm::value_ptr(matrix)));
+        location = glGetUniformLocation(program, name.c_str());
+        glUniformMatrix4fv(location, 1, GL_FALSE, glm::value_ptr(matrix));
     }
     template<>
     void Shader::setUniform(const std::string& name, const glm::vec2& vector)
     {
         GLint location = 0;
-        glChecked(location = glGetUniformLocation(program, name.c_str()));
-        glChecked(glUniform2fv(location, 1, glm::value_ptr(vector)));
+        location = glGetUniformLocation(program, name.c_str());
+        glUniform2fv(location, 1, glm::value_ptr(vector));
     }
     template<>
     void Shader::setUniform(const std::string& name, const glm::vec3& vector)
     {
         GLint location = 0;
-        glChecked(location = glGetUniformLocation(program, name.c_str()));
-        glChecked(glUniform3fv(location, 1, glm::value_ptr(vector)));
+        location = glGetUniformLocation(program, name.c_str());
+        glUniform3fv(location, 1, glm::value_ptr(vector));
     }
     template<>
     void Shader::setUniform(const std::string& name, const glm::vec4& vector)
     {
         GLint location = 0;
-        glChecked(location = glGetUniformLocation(program, name.c_str()));
-        glChecked(glUniform4fv(location, 1, glm::value_ptr(vector)));
+        location = glGetUniformLocation(program, name.c_str());
+        glUniform4fv(location, 1, glm::value_ptr(vector));
     }
 #pragma endregion Shader
 #pragma region Shape
     Shape::~Shape()
     {
-        for (auto buffer : buffers)
-        {
-            if (buffer)
-                cache.release(buffer);
-        }
+        if (buffers[0])
+            cache_vbo.release(buffers[0]);
+        if (buffers[1])
+            cache_ebo.release(buffers[1]);
+        if (buffers[2])
+            cache_ebo.release(buffers[2]);
     }
     void Shape::setFillColor(const Color& color)
     {
@@ -1734,25 +1773,25 @@ void main()
             guard.get().setUniform("texInfo", texInfo);
 
             // Buffers
-            glChecked(glBindBuffer(GL_ARRAY_BUFFER, buffers[0]));
-            glChecked(glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, buffers[1]));
+            ScopedBufferBinding<GL_ARRAY_BUFFER> vbo{ buffers[0] };
 
             // Vertex attributes
             auto posAttrib = guard.get().attribute("position");
-            glChecked(glEnableVertexAttribArray(posAttrib));
-            glChecked(glVertexAttribPointer(posAttrib, 2, GL_FLOAT, GL_FALSE, sizeof(VertexInfo), (GLvoid*)0));
+            glEnableVertexAttribArray(posAttrib);
+            glVertexAttribPointer(posAttrib, 2, GL_FLOAT, GL_FALSE, sizeof(VertexInfo), (GLvoid*)0);
             auto texAttrib = guard.get().attribute("intex");
             if (texAttrib >= 0)
             {
-                glChecked(glEnableVertexAttribArray(texAttrib));
-                glChecked(glVertexAttribPointer(texAttrib, 2, GL_FLOAT, GL_FALSE, sizeof(VertexInfo), (GLvoid*)sizeof(Vector2f)));
+                glEnableVertexAttribArray(texAttrib);
+                glVertexAttribPointer(texAttrib, 2, GL_FLOAT, GL_FALSE, sizeof(VertexInfo), (GLvoid*)sizeof(Vector2f));
 
             }
             // Don't draw if transparent fill.
             if (fill.a > 0)
             {
+                ScopedBufferBinding<GL_ELEMENT_ARRAY_BUFFER> ebo{ buffers[1] };
                 // Filled shape.
-                glChecked(glDrawElements(gl::primitive_cast(getType()), elementCount, filledElementType, (GLvoid*)0));
+                glDrawElements(gl::primitive_cast(getType()), elementCount, filledElementType, (GLvoid*)0);
             }
 
             // outline
@@ -1762,19 +1801,19 @@ void main()
                 // setup state.
                 auto smoothed = false;
                 GLfloat currentWidth = 0.f;
-                glChecked(glGetFloatv(GL_LINE_WIDTH, &currentWidth));
-                glChecked(glLineWidth(outlineThickness));
-                glChecked(glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, buffers[2]));
+                glGetFloatv(GL_LINE_WIDTH, &currentWidth);
+                glLineWidth(outlineThickness);
+                ScopedBufferBinding<GL_ELEMENT_ARRAY_BUFFER> ebo{ buffers[2] };
                 guard.get().setUniform("fillColor", outline);
-                glChecked(glDrawElements(GL_LINE_STRIP, outlineElementCount, outlineElementType, (GLvoid*)0));
+                glDrawElements(GL_LINE_STRIP, outlineElementCount, outlineElementType, (GLvoid*)0);
                 // cleanup state
-                glChecked(glLineWidth(currentWidth));
+                glLineWidth(currentWidth);
             }
             if (texAttrib >= 0)
             {
-                glChecked(glDisableVertexAttribArray(texAttrib));
+                glDisableVertexAttribArray(texAttrib);
             }
-            glChecked(glDisableVertexAttribArray(posAttrib));
+            glDisableVertexAttribArray(posAttrib);
         }
     }
 
@@ -1789,14 +1828,11 @@ void main()
     }
     void Shape::setFilledElements(const void* elements, size_t typeSize, size_t count)
     {
-        GLint currentEbo = 0;
-        glChecked(glGetIntegerv(GL_ELEMENT_ARRAY_BUFFER_BINDING, &currentEbo));
         SDL_assert(buffers[buffer_cast(Buffer::ElementsFilled)] == 0);
-        buffers[buffer_cast(Buffer::ElementsFilled)] = cache.acquire(count * typeSize);
+        buffers[buffer_cast(Buffer::ElementsFilled)] = cache_ebo.acquire(count * typeSize);
+        ScopedBufferBinding<GL_ELEMENT_ARRAY_BUFFER> ebo{ buffers[buffer_cast(Buffer::ElementsFilled)] };
         // update our EBO.
-        glChecked(glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, buffers[buffer_cast(Buffer::ElementsFilled)]));
-        glChecked(glBufferSubData(GL_ELEMENT_ARRAY_BUFFER, 0, count * typeSize, elements));
-        glChecked(glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, currentEbo));
+        glBufferSubData(GL_ELEMENT_ARRAY_BUFFER, 0, count * typeSize, elements);
         elementCount = count;
         switch (typeSize)
         {
@@ -1815,32 +1851,26 @@ void main()
     }
     void Shape::setVertices(const VertexInfo* vertices, size_t count)
     {
-        GLint currentVbo = 0;
-        glChecked(glGetIntegerv(GL_ARRAY_BUFFER_BINDING, &currentVbo));
-        if ((count * sizeof(decltype(*vertices)) > cache.getSize(buffers[buffer_cast(Buffer::Vertex)])))
+        if ((count * sizeof(decltype(*vertices)) > cache_vbo.getSize(buffers[buffer_cast(Buffer::Vertex)])))
         {
-            cache.release(buffers[buffer_cast(Buffer::Vertex)]);
-            buffers[buffer_cast(Buffer::Vertex)] = cache.acquire(count * sizeof(decltype(*vertices)));
+            cache_vbo.release(buffers[buffer_cast(Buffer::Vertex)]);
+            buffers[buffer_cast(Buffer::Vertex)] = cache_vbo.acquire(count * sizeof(decltype(*vertices)));
 
         }
         
+        ScopedBufferBinding<GL_ARRAY_BUFFER> vbo{ buffers[buffer_cast(Buffer::Vertex)] };
         // update our VBO.
-        glChecked(glBindBuffer(GL_ARRAY_BUFFER, buffers[buffer_cast(Buffer::Vertex)]));
-        glChecked(glBufferData(GL_ARRAY_BUFFER, count * sizeof(decltype(*vertices)), vertices, GL_STATIC_DRAW));
-        glChecked(glBindBuffer(GL_ARRAY_BUFFER, currentVbo));
+        glBufferData(GL_ARRAY_BUFFER, count * sizeof(decltype(*vertices)), vertices, GL_STATIC_DRAW);
     }
     void Shape::setOutlineElements(const void* elements, size_t typeSize, size_t count)
     {
-        GLint currentEbo = 0;
-        glChecked(glGetIntegerv(GL_ELEMENT_ARRAY_BUFFER_BINDING, &currentEbo));
         SDL_assert(buffers[buffer_cast(Buffer::ElementsOutline)] == 0);
-        buffers[buffer_cast(Buffer::ElementsOutline)] = cache.acquire(count * typeSize);
+        buffers[buffer_cast(Buffer::ElementsOutline)] = cache_ebo.acquire(count * typeSize);
 
+        // update our outline EBO.
+        ScopedBufferBinding<GL_ELEMENT_ARRAY_BUFFER> ebo{ buffers[buffer_cast(Buffer::ElementsOutline)] };
         
-        // update our outline VBO.
-        glChecked(glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, buffers[buffer_cast(Buffer::ElementsOutline)]));
-        glChecked(glBufferData(GL_ELEMENT_ARRAY_BUFFER, count * typeSize, elements, GL_STATIC_DRAW));
-        glChecked(glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, currentEbo));
+        glBufferData(GL_ELEMENT_ARRAY_BUFFER, count * typeSize, elements, GL_STATIC_DRAW);
         outlineElementCount = count;
         switch (typeSize)
         {
@@ -1910,6 +1940,8 @@ void main()
     Text::Text(const String& string, const Font& font, unsigned int characterSize)
         :textLength{string.getSize()}
     {
+        if (characterSize == 0)
+            return;
         std::vector<VertexInfo> vertices;
         std::vector<uint32_t> elements;
 
@@ -1923,6 +1955,7 @@ void main()
         stbtt_aligned_quad quad;
         float x = 0.f, y = lineSpacing;
 
+        //const auto scale_factor = stbtt_ScaleForMappingEmToPixels(&font, STBTT_POINT_SIZE(int32_t(characterSize)));
         for (auto i = 0; i < textLength; ++i)
         {
             auto character = string[i];
@@ -2006,24 +2039,18 @@ void main()
             return transient.data();
         }(transient, elements, element_size);
 
-        buffers[1] = cache.acquire(elements.size() * element_size);
-        buffers[0] = cache.acquire(vertices.size() * sizeof(VertexInfo));
+        buffers[1] = cache_ebo.acquire(elements.size() * element_size);
+        buffers[0] = cache_vbo.acquire(vertices.size() * sizeof(VertexInfo));
 
         {
-            GLint currentEbo = 0;
-            glChecked(glGetIntegerv(GL_ELEMENT_ARRAY_BUFFER_BINDING, &currentEbo));
             // update our EBO.
-            glChecked(glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, buffers[1]));
-            glChecked(glBufferSubData(GL_ELEMENT_ARRAY_BUFFER, 0, elements.size() * element_size, elements_ptr));
-            glChecked(glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, currentEbo));
+            ScopedBufferBinding<GL_ELEMENT_ARRAY_BUFFER> ebo{ buffers[1] };
+            glBufferSubData(GL_ELEMENT_ARRAY_BUFFER, 0, elements.size() * element_size, elements_ptr);
         }
         {
-            GLint currentVbo = 0;
-            glChecked(glGetIntegerv(GL_ARRAY_BUFFER_BINDING, &currentVbo));
             // update our VBO.
-            glChecked(glBindBuffer(GL_ARRAY_BUFFER, buffers[0]));
-            glChecked(glBufferSubData(GL_ARRAY_BUFFER, 0, vertices.size() * sizeof(decltype(vertices[0])), vertices.data()));
-            glChecked(glBindBuffer(GL_ARRAY_BUFFER, currentVbo));
+            ScopedBufferBinding<GL_ARRAY_BUFFER> vbo{ buffers[0] };
+            glBufferSubData(GL_ARRAY_BUFFER, 0, vertices.size() * sizeof(decltype(vertices[0])), vertices.data());
         }
 
         texture = &atlas.tex;
@@ -2032,8 +2059,10 @@ void main()
 
     Text::~Text()
     {
-        for (auto buffer : buffers)
-            cache.release(buffer);
+        if (buffers[0])
+            cache_vbo.release(buffers[0]);
+        if (buffers[1])
+            cache_ebo.release(buffers[1]);
     }
     void Text::setColor(const Color& color)
     {
@@ -2045,6 +2074,8 @@ void main()
     }
     void Text::draw(RenderTarget&target, RenderStates states) const
     {
+        if (!texture)
+            return;
         constexpr bool useTextSpecific = true;
         if constexpr (useTextSpecific)
         {
@@ -2074,21 +2105,22 @@ void main()
             guard.get().setUniform("texInfo", glm::vec4{ 0.f, 0.f, 1.f, 1.f });
             guard.get().setUniform("texFlip", false);
             guard.get().setUniform("fillColor", fill);
+
             // Buffers
-            glChecked(glBindBuffer(GL_ARRAY_BUFFER, buffers[0]));
-            glChecked(glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, buffers[1]));
+            ScopedBufferBinding<GL_ARRAY_BUFFER> vbo{ buffers[0] };
+            ScopedBufferBinding<GL_ELEMENT_ARRAY_BUFFER> ebo{ buffers[1] };
 
             // Vertex attributes
             auto posAttrib = guard.get().attribute("position");
             constexpr auto vertexTypeSize = sizeof(VertexInfo);
-            glChecked(glEnableVertexAttribArray(posAttrib));
-            glChecked(glVertexAttribPointer(posAttrib, 2, GL_FLOAT, GL_FALSE, vertexTypeSize, (GLvoid*)0));
+            glEnableVertexAttribArray(posAttrib);
+            glVertexAttribPointer(posAttrib, 2, GL_FLOAT, GL_FALSE, vertexTypeSize, (GLvoid*)0);
             auto texAttrib = guard.get().attribute("intex");
-            glChecked(glEnableVertexAttribArray(texAttrib));
-            glChecked(glVertexAttribPointer(texAttrib, 2, GL_FLOAT, GL_FALSE, vertexTypeSize, (GLvoid*)sizeof(Vector2f)));
-            glChecked(glDrawElements(GL_TRIANGLES, textLength * 6, element_type_for_size(textLength), (GLvoid*)0));
-            glChecked(glDisableVertexAttribArray(texAttrib));
-            glChecked(glDisableVertexAttribArray(posAttrib));
+            glEnableVertexAttribArray(texAttrib);
+            glVertexAttribPointer(texAttrib, 2, GL_FLOAT, GL_FALSE, vertexTypeSize, (GLvoid*)sizeof(Vector2f));
+            glDrawElements(GL_TRIANGLES, textLength * 6, element_type_for_size(textLength), (GLvoid*)0);
+            glDisableVertexAttribArray(texAttrib);
+            glDisableVertexAttribArray(posAttrib);
         }
     }
 #pragma endregion Text
@@ -2097,7 +2129,7 @@ void main()
     {
         SDL_assert(coordinateType == CoordinateType::Normalized);
         auto textureID = texture ? texture->glObject : GL_NONE;
-        glChecked(glBindTexture(GL_TEXTURE_2D, textureID));
+        glBindTexture(GL_TEXTURE_2D, textureID);
 #if 0
         if (textureID)
         {
@@ -2125,10 +2157,10 @@ void main()
                 }
 
                 // Load the matrix
-                glChecked(glMatrixMode(GL_TEXTURE));
-                glChecked(glLoadMatrixf(matrix));
+                glMatrixMode(GL_TEXTURE);
+                glLoadMatrixf(matrix);
                 // Go back to model-view mode (sf::RenderTarget relies on it)
-                glChecked(glMatrixMode(GL_MODELVIEW));
+                glMatrixMode(GL_MODELVIEW);
             }
         }
 #endif
@@ -2140,7 +2172,7 @@ void main()
 
     Texture::~Texture()
     {
-        glChecked(glDeleteTextures(1, &glObject));
+        glDeleteTextures(1, &glObject);
     }
     Vector2u Texture::getSize() const
     {
@@ -2150,7 +2182,7 @@ void main()
     {
         if (!*this)
         {
-            glChecked(glGenTextures(1, &glObject));
+            glGenTextures(1, &glObject);
         }
         ScopedTexture guard{ *this };
         // In line with SFML implementation.
@@ -2160,24 +2192,36 @@ void main()
             ((area.left <= 0) && (area.top <= 0) && (area.width >= imageSize.x) && (area.height >= imageSize.y)))
         {
             size = image.getSize();
-            if (GLAD_GL_EXT_texture_compression_s3tc && image.getFormat() == DDSKTX_FORMAT_BC1 || image.getFormat() == DDSKTX_FORMAT_BC3)
+            auto gl_format = [ddsktx_format = image.getFormat()]()
+            {
+                switch (ddsktx_format)
+                {
+                case DDSKTX_FORMAT_BC1:
+                    return GL_COMPRESSED_RGB_S3TC_DXT1_EXT;
+                case DDSKTX_FORMAT_BC3:
+                    return GL_COMPRESSED_RGBA_S3TC_DXT5_EXT;
+                case DDSKTX_FORMAT_ETC1:
+                    return GL_ETC1_RGB8_OES;
+                }
+
+                return GL_NONE;
+            }();
+
+            if (gl_format != GL_NONE)
             {
                 ddsktx_texture_info info{};
                 if (ddsktx_parse(&info, image.data(), image.getByteSize()))
                 {
-                    auto gl_format = image.getFormat() == DDSKTX_FORMAT_BC1 ? GL_COMPRESSED_RGB_S3TC_DXT1_EXT : GL_COMPRESSED_RGBA_S3TC_DXT5_EXT;
                     ddsktx_sub_data sub_data{};
                     for (auto mip = 0; mip < 1; ++mip)
                     {
                         ddsktx_get_sub(&info, &sub_data, image.data(), image.getByteSize(), 0, 0, mip);
-                        glChecked(glCompressedTexImage2D(GL_TEXTURE_2D, mip, gl_format, sub_data.width, sub_data.height, 0, sub_data.size_bytes, sub_data.buff));
-
+                        glCompressedTexImage2D(GL_TEXTURE_2D, mip, gl_format, sub_data.width, sub_data.height, 0, sub_data.size_bytes, sub_data.buff);
                     }
-                    
                 }
             }
             else
-                glChecked(glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, size.x, size.y, 0, GL_RGBA, GL_UNSIGNED_BYTE, image.data() + offset));
+                glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, size.x, size.y, 0, GL_RGBA, GL_UNSIGNED_BYTE, image.data() + offset);
         }
         else
         {
@@ -2190,16 +2234,16 @@ void main()
 
             size = { static_cast<uint32_t>(rectangle.width), static_cast<uint32_t>(rectangle.height) };
             // Create the (empty) texture
-            glChecked(glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, size.x, size.y, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr));
+            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, size.x, size.y, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
             offset = 4 * (rectangle.left + (size_t(imageSize.x) * rectangle.top));
             for (int i = 0; i < rectangle.height; ++i)
             {
-                glChecked(glTexSubImage2D(GL_TEXTURE_2D, 0, 0, i, rectangle.width, 1, GL_RGBA, GL_UNSIGNED_BYTE, image.data() + offset));
+                glTexSubImage2D(GL_TEXTURE_2D, 0, 0, i, rectangle.width, 1, GL_RGBA, GL_UNSIGNED_BYTE, image.data() + offset);
                 offset += 4 * size_t(imageSize.x);
             }
         }
         forceUpdate();
-        glChecked(glGenerateMipmap(GL_TEXTURE_2D));
+        //glGenerateMipmap(GL_TEXTURE_2D);
         return true;
     }
 
@@ -2244,13 +2288,13 @@ void main()
 
     void Texture::updateRepeat()
     {
-        glChecked(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, repeated ? GL_REPEAT : GL_CLAMP_TO_EDGE));
-        glChecked(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, repeated ? GL_REPEAT : GL_CLAMP_TO_EDGE));
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, repeated ? GL_REPEAT : GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, repeated ? GL_REPEAT : GL_CLAMP_TO_EDGE);
     }
     void Texture::updateSmooth()
     {
-        glChecked(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, smooth ? GL_LINEAR : GL_NEAREST));
-        glChecked(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, smooth ? GL_LINEAR : GL_NEAREST));
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, smooth ? GL_LINEAR : GL_NEAREST);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, smooth ? GL_LINEAR : GL_NEAREST);
     }
 #pragma
     Transform::Transform()
@@ -2337,16 +2381,14 @@ void main()
         :vertices(vertexCount),
         type{ gl::primitive_cast(type) }
     {
-        buffers[0] = cache.acquire(vertices.size() * sizeof(decltype(vertices)::value_type));
+        buffers[0] = cache_vbo.acquire(vertices.size() * sizeof(decltype(vertices)::value_type));
     }
     VertexArray::~VertexArray()
     {
-        for (auto buffer : buffers)
-        {
-            if (buffer)
-                cache.release(buffer);
-        }
-            
+        if (buffers[0])
+            cache_vbo.release(buffers[0]);
+        if (buffers[1])
+            cache_ebo.release(buffers[1]);
     }
     Vertex& VertexArray::operator [](std::size_t index)
     {
@@ -2373,19 +2415,16 @@ void main()
             shader.loadFromStream(vertexShaderStream, fragmentShaderStream);
         }
 
-        glChecked(glBindBuffer(GL_ARRAY_BUFFER, buffers[0]));
-        
-        if (!elements.empty())
-        {
-            glChecked(glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, buffers[1]));
-        }
+
+        ScopedBufferBinding<GL_ARRAY_BUFFER> vbo{ buffers[0] };
+        ScopedBufferBinding<GL_ELEMENT_ARRAY_BUFFER> ebo{ elements.empty() ? GL_NONE : buffers[1] };
 
         if (dirty)
         {
-            glChecked(glBufferSubData(GL_ARRAY_BUFFER, 0, vertices.size() * sizeof(decltype(vertices)::value_type), vertices.data()));
+            glBufferSubData(GL_ARRAY_BUFFER, 0, vertices.size() * sizeof(decltype(vertices)::value_type), vertices.data());
             if (!elements.empty())
             {
-                glChecked(glBufferSubData(GL_ELEMENT_ARRAY_BUFFER, 0, elements.size() * sizeof(decltype(elements)::value_type), elements.data()));
+                glBufferSubData(GL_ELEMENT_ARRAY_BUFFER, 0, elements.size() * sizeof(decltype(elements)::value_type), elements.data());
             }
             dirty = false;
         }
@@ -2405,35 +2444,40 @@ void main()
         Vector2f texSize{ states.texture ? Vector2f(states.texture->getSize()) : Vector2f{1.f, 1.f} };
         guard.get().setUniform("texSize", texSize);
         guard.get().setUniform("texFlip", states.texture ? states.texture->isFlipped() : false);
-        glChecked(glEnableVertexAttribArray(posAttrib));
-        glChecked(glEnableVertexAttribArray(colorAttrib));
-        glChecked(glEnableVertexAttribArray(texAttrib));
-        glChecked(glVertexAttribPointer(posAttrib, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex), (GLvoid*)0));
-        glChecked(glVertexAttribPointer(colorAttrib, 4, GL_UNSIGNED_BYTE, GL_TRUE, sizeof(Vertex), (GLvoid*)sizeof(Vector2f)));
-        glChecked(glVertexAttribPointer(texAttrib, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex), (GLvoid*)(sizeof(Vector2f) + sizeof(Color))));
+        glEnableVertexAttribArray(posAttrib);
+        glEnableVertexAttribArray(colorAttrib);
+        glEnableVertexAttribArray(texAttrib);
+        glVertexAttribPointer(posAttrib, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex), (GLvoid*)0);
+        glVertexAttribPointer(colorAttrib, 4, GL_UNSIGNED_BYTE, GL_TRUE, sizeof(Vertex), (GLvoid*)sizeof(Vector2f));
+        glVertexAttribPointer(texAttrib, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex), (GLvoid*)(sizeof(Vector2f) + sizeof(Color)));
         if (!elements.empty())
         {
-            glChecked(glDrawElements(type, elements.size(), GL_UNSIGNED_SHORT, (GLvoid*)0));
+            glDrawElements(type, elements.size(), GL_UNSIGNED_SHORT, (GLvoid*)0);
         }
         else
         {
-            glChecked(glDrawArrays(type, 0, vertices.size()));
+            glDrawArrays(type, 0, vertices.size());
         }
-        glChecked(glDisableVertexAttribArray(colorAttrib));
-        glChecked(glDisableVertexAttribArray(posAttrib));
-        glChecked(glDisableVertexAttribArray(texAttrib));
+        glDisableVertexAttribArray(colorAttrib);
+        glDisableVertexAttribArray(posAttrib);
+        glDisableVertexAttribArray(texAttrib);
     }
 
     void VertexArray::setElements(std::vector<uint16_t>&& elements)
     {
         if (buffers[1])
         {
-            cache.release(buffers[1]);
+            
             buffers[1] = 0;
         }
         this->elements = std::move(elements);
+        auto new_size = elements.size() * sizeof(decltype(this->elements)::value_type);
+        if (buffers[1] && new_size > cache_ebo.getSize(buffers[1]))
+        {
+            cache_ebo.release(buffers[1]);
+            buffers[1] = cache_ebo.acquire(new_size);
+        }
 
-        buffers[1] = cache.acquire(elements.size() * sizeof(decltype(this->elements)::value_type));
         dirty = true;
     }
 #pragma endregion VertexArray
