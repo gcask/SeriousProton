@@ -1006,7 +1006,7 @@ void main()
                     {
                         size.x = info.width;
                         size.y = info.height;
-                        format = info.format;
+                        format = 0;
                         SDL_RWclose(ops);
                         return true;
                     }
@@ -2195,35 +2195,41 @@ void main()
             ((area.left <= 0) && (area.top <= 0) && (area.width >= imageSize.x) && (area.height >= imageSize.y)))
         {
             size = image.getSize();
-            auto gl_format = [ddsktx_format = image.getFormat()]()
-            {
-                switch (ddsktx_format)
-                {
-                case UINT32_MAX:
-                    return GL_NONE;
-                case DDSKTX_FORMAT_BC1:
-                    return GL_COMPRESSED_RGB_S3TC_DXT1_EXT;
-                case DDSKTX_FORMAT_BC3:
-                    return GL_COMPRESSED_RGBA_S3TC_DXT5_EXT;
-                case DDSKTX_FORMAT_ASTC8x6:
-                    return GL_COMPRESSED_RGBA_ASTC_8x6_KHR;
-                case DDSKTX_FORMAT_RG8:
-                    return GL_LUMINANCE_ALPHA;
-                }
-
-                return GL_RGBA;
-            }();
-
-            if (gl_format != GL_NONE)
+            if (!image.getFormat())
             {
                 ddsktx_texture_info info{};
                 if (ddsktx_parse(&info, image.data(), image.getByteSize()))
                 {
+                    auto gl_format = [format = info.format]()
+                    {
+                        switch (format)
+                        {
+                        case DDSKTX_FORMAT_ASTC4x4:
+                            return GL_COMPRESSED_RGBA_ASTC_4x4_KHR;
+                        case DDSKTX_FORMAT_ASTC5x5:
+                            return GL_COMPRESSED_RGBA_ASTC_5x5_KHR;
+                        case DDSKTX_FORMAT_ASTC6x6:
+                            return GL_COMPRESSED_RGBA_ASTC_6x6_KHR;
+                        case DDSKTX_FORMAT_ASTC8x5:
+                            return GL_COMPRESSED_RGBA_ASTC_8x5_KHR;
+                        case DDSKTX_FORMAT_ASTC8x6:
+                            return GL_COMPRESSED_RGBA_ASTC_8x6_KHR;
+                        case DDSKTX_FORMAT_ASTC10x5:
+                            return GL_COMPRESSED_RGBA_ASTC_10x5_KHR;
+                        case DDSKTX_FORMAT_BC1:
+                            return GL_COMPRESSED_RGBA_S3TC_DXT1_EXT;
+                        case DDSKTX_FORMAT_BC3:
+                            return GL_COMPRESSED_RGBA_S3TC_DXT5_EXT;
+                        }   
+
+                        SDL_assert_paranoid(false);
+                        return GL_NONE;
+                    }();
                     ddsktx_sub_data sub_data{};
                     for (auto mip = 0; mip < info.num_mips; ++mip)
                     {
                         ddsktx_get_sub(&info, &sub_data, image.data(), image.getByteSize(), 0, 0, mip);
-                        if (ddsktx_format_compressed(static_cast<ddsktx_format>(image.getFormat())))
+                        if (ddsktx_format_compressed(info.format))
                             glCompressedTexImage2D(GL_TEXTURE_2D, mip, gl_format, sub_data.width, sub_data.height, 0, sub_data.size_bytes, sub_data.buff);
                         else
                             glTexImage2D(GL_TEXTURE_2D, mip, gl_format, sub_data.width, sub_data.height, 0, gl_format, GL_UNSIGNED_BYTE, sub_data.buff);
@@ -2231,7 +2237,9 @@ void main()
                 }
             }
             else
+            {
                 glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, size.x, size.y, 0, GL_RGBA, GL_UNSIGNED_BYTE, image.data() + offset);
+            }
         }
         else
         {
