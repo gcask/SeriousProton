@@ -2217,7 +2217,7 @@ void main()
                         case DDSKTX_FORMAT_ASTC10x5:
                             return GL_COMPRESSED_RGBA_ASTC_10x5_KHR;
                         case DDSKTX_FORMAT_BC1:
-                            return GL_COMPRESSED_RGBA_S3TC_DXT1_EXT;
+                            return GL_COMPRESSED_RGB_S3TC_DXT1_EXT;
                         case DDSKTX_FORMAT_BC3:
                             return GL_COMPRESSED_RGBA_S3TC_DXT5_EXT;
                         }   
