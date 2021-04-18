@@ -77,8 +77,14 @@ void TextureManager::loadTexture(string name, sf::Vector2i subDiv)
     P<ResourceStream> stream;
     if (GLAD_GL_EXT_texture_compression_s3tc || GLAD_GL_KHR_texture_compression_astc_ldr)
     {
-        auto extension = name.substr(-4);
-        auto basename = extension == ".png" ? name.substr(0, -4) : name;
+        std::string_view name_view{ name };
+        auto extension = name_view.find_last_of('.');
+        if (extension != name_view.npos)
+        {
+            name_view = name_view.substr(0, extension);
+        }
+
+        std::string basename{ name_view };
 
         if (GLAD_GL_KHR_texture_compression_astc_ldr)
             stream = getResourceStream(basename + "-astc.ktx");
