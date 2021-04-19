@@ -40,17 +40,13 @@ void GameClient::update(float delta)
     if (status == Disconnected || status == Connecting)
         return;
 
-    std::vector<int32_t> delList;
-    for(std::unordered_map<int32_t, P<MultiplayerObject> >::iterator i=objectMap.begin(); i != objectMap.end(); i++)
+    for (auto it = std::begin(objectMap), last = std::end(objectMap); it != last;)
     {
-        int id = i->first;
-        P<MultiplayerObject> obj = i->second;
-        if (!obj)
-            delList.push_back(id);
+        if (!it->second)
+            it = objectMap.erase(it);
+        else
+            ++it;
     }
-    for(unsigned int n=0; n<delList.size(); n++)
-        objectMap.erase(delList[n]);
-
     socket.update();
     sf::Packet reply;
     sf::Packet packet;
