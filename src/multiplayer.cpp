@@ -3,6 +3,7 @@
 #include "collisionable.h"
 #include "engine.h"
 #include "multiplayer_internal.h"
+#include "xxhash.h"
 
 static PVector<Collisionable> collisionable_significant;
 class CollisionableReplicationData
@@ -51,15 +52,13 @@ template <> bool multiplayerReplicationFunctions<string>::isChanged(void* data, 
     string* ptr = (string*)data;
     uintptr_t* hash_ptr = (uintptr_t*)prev_data_ptr;
 
-    uintptr_t hash = 5381;
-    hash = ((hash << 5) + hash) + ptr->length();
-    for(unsigned int n=0; n<ptr->length(); n++)
-        hash = (hash * 33) + (*ptr)[n];
-    if (*hash_ptr != hash)
+    auto hashed = XXH32(ptr->data(), ptr->size(), 0);
+    if (hashed != *hash_ptr)
     {
-        *hash_ptr = hash;
+        *hash_ptr = hashed;
         return true;
     }
+
     return false;
 }
 

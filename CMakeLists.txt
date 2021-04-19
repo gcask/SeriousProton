@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.8 FATAL_ERROR)
-project(SeriousProton LANGUAGES CXX)
+project(SeriousProton LANGUAGES CXX C)
 
 set(CMAKE_MODULE_PATH
     ${CMAKE_SOURCE_DIR}/cmake/
@@ -120,6 +120,7 @@ set(source_files #All SeriousProton's objects to compile
     src/tween.cpp
     src/Updatable.cpp
     src/windowManager.cpp
+    src/xxhash.c
 )
 
 #----------------------------------Compiling-----------------------------------
