@@ -92,7 +92,254 @@ namespace
 
         SDL_assert(error_code == GL_NO_ERROR);
     }
-}
+
+    namespace shaders
+    {
+        constexpr std::array trivial{
+R"glsl(#version 100
+uniform mat4 projection;
+attribute vec2 position;
+attribute vec4 color;
+varying lowp vec4 vertexColor;
+void main()
+{
+    gl_Position = projection * vec4(position, 0.0, 1.0);
+    vertexColor = color;
+})glsl",
+
+R"glsl(#version 100
+varying lowp vec4 vertexColor;
+void main()
+{
+    gl_FragColor = vertexColor;
+})glsl"
+        };
+        constexpr std::array vertex_array{
+R"glsl(#version 100
+uniform mat4 projection;
+uniform vec2 texSize;
+attribute vec2 position;
+attribute vec2 intex;
+attribute vec4 color;
+
+varying lowp vec4 vertexColor;
+varying vec2 vertexTexCoords;
+void main()
+{
+    gl_Position = projection * vec4(position, 0.0, 1.0);
+    vertexColor = color;
+    vertexTexCoords = intex / texSize;
+})glsl",
+
+R"glsl(#version 100
+precision mediump float;
+uniform sampler2D tex;
+uniform bool textured;
+
+varying lowp vec4 vertexColor;
+varying vec2 vertexTexCoords;
+
+void main()
+{
+    if (!textured)
+        gl_FragColor = vertexColor;
+    else
+        gl_FragColor = texture2D(tex, vertexTexCoords) * vertexColor;
+})glsl"
+        };
+
+        constexpr std::array shape{
+R"glsl(#version 100
+uniform mat4 projection;
+attribute vec2 position;
+
+void main()
+{
+    gl_Position = projection * vec4(position, 0.0, 1.0);
+})glsl",
+
+R"glsl(#version 100
+precision mediump float;
+uniform lowp vec4 fillColor;
+void main()
+{
+    gl_FragColor = fillColor;
+})glsl"
+        };
+
+        constexpr std::array shape_textured{
+R"glsl(#version 100
+uniform mat4 projection;
+uniform vec4 texInfo;
+uniform bool texFlip;
+attribute vec2 position;
+attribute vec2 intex;
+varying vec2 fragtex;
+void main()
+{
+    gl_Position = projection * vec4(position, 0.0, 1.0);
+    
+    fragtex = (texInfo.xy + intex) / texInfo.zw;
+    if (texFlip)
+        fragtex.y = fragtex.y * -1.0 + 1.0;
+})glsl",
+
+R"glsl(#version 100
+precision mediump float;
+uniform sampler2D tex;
+uniform lowp vec4 fillColor;
+uniform bool outline;
+varying vec2 fragtex;
+void main()
+{
+    if (!outline)
+        gl_FragColor = texture2D(tex, fragtex) * fillColor;
+    else
+        gl_FragColor = fillColor;
+})glsl"
+        };
+
+        constexpr std::array text{
+            shape_textured[0],
+R"glsl(#version 100
+precision mediump float;
+uniform sampler2D tex;
+uniform lowp vec4 fillColor;
+varying vec2 fragtex;
+void main()
+{
+    gl_FragColor = vec4(1.0, 1.0, 1.0, texture2D(tex, fragtex).a) * fillColor;
+})glsl"
+        };
+
+
+        enum class attributes : uint8_t
+        {
+            intex = 0,
+            position,
+            color,
+            //
+            count
+        };
+        using attributes_t = std::underlying_type_t<attributes>;
+
+        enum class uniforms : uint8_t
+        {
+            outline = 0,
+            texFlip,
+            textured,
+            fillColor,
+            projection,
+            texSize,
+            texInfo,
+
+            //
+            count
+        };
+        using uniforms_t = std::underlying_type_t<uniforms>;
+
+        enum class samplers : uint8_t
+        {
+            tex = 0,
+            //
+            count
+        };
+        using samplers_t = std::underlying_type_t<samplers>;
+
+        enum class shaders : uint8_t
+        {
+            trivial = 0,
+            vertex_array,
+            shape,
+            shape_textured,
+            text,
+            //
+            count
+        };
+        using shaders_t = std::underlying_type_t<shaders>;
+        
+        class Shader
+        {
+        public:
+            sf::Shader* get() { return &shader; }
+            const sf::Shader* get() const { return &shader; }
+            int32_t uniform(uniforms id) const { return uniforms[uniforms_t(id)]; }
+            int32_t attribute(attributes id) const { return attributes[attributes_t(id)]; }
+            static void initialize();
+            static void shutdown();
+
+            static Shader& get(shaders id) { return shaders[shaders_t(id)]; }
+        private:
+            sf::Shader shader;
+            std::array<int32_t, uniforms_t(uniforms::count)> uniforms;
+            std::array<int32_t, uniforms_t(attributes::count)> attributes;
+
+            static std::array<Shader, shaders_t(shaders::count)> shaders;
+        };
+        std::array<Shader, shaders_t(shaders::count)> Shader::shaders;
+        void Shader::initialize()
+        {
+            static constexpr std::array attribute_names{ "intex", "position", "color" };
+            static constexpr std::array uniform_names
+            {
+                "outline", "texFlip", "textured", "fillColor",
+                "projection", "texSize", "texInfo"
+            };
+            static constexpr std::array sampler_names{ "tex" };
+
+            // load up shaders.
+            sf::MemoryInputStream vertex, fragment;
+
+            auto load = [&vertex, &fragment](const auto& texts, sf::Shader& shader)
+            {
+                vertex.open(texts[0], strlen(texts[0]) + 1);
+                fragment.open(texts[1], strlen(texts[1]) + 1);
+
+                return shader.loadFromStream(vertex, fragment);
+            };
+
+            load(trivial, shaders[shaders_t(shaders::trivial)].shader);
+            load(vertex_array, shaders[shaders_t(shaders::vertex_array)].shader);
+            load(shape, shaders[shaders_t(shaders::shape)].shader);
+            load(shape_textured, shaders[shaders_t(shaders::shape_textured)].shader);
+            load(text, shaders[shaders_t(shaders::text)].shader);
+
+            for (auto& entry: shaders)
+            {
+                auto handle = entry.shader.getNativeHandle();
+
+                // First update attribute locations.
+                for (auto attrib = 0; attrib < attribute_names.size(); ++attrib)
+                {
+                    entry.attributes[attrib] = glGetAttribLocation(handle, attribute_names[attrib]);
+                }
+
+                // Find out uniform locations
+                for (auto uniform = 0; uniform < uniform_names.size(); ++uniform)
+                {
+                    entry.uniforms[uniform] = glGetUniformLocation(handle, uniform_names[uniform]);
+                }
+
+                // Lockdown texture locations.
+                glUseProgram(handle);
+                for (auto sampler = 0; sampler < sampler_names.size(); ++sampler)
+                {
+                    auto location = glGetUniformLocation(handle, sampler_names[sampler]);
+                    if (location != -1)
+                    {
+                        glUniform1i(location, sampler);
+                    }
+                }
+            }
+            glUseProgram(GL_NONE);
+        }
+
+        void Shader::shutdown()
+        {
+        }
+
+    } // ns shaders
+} // anonymous ns
 
 namespace sf
 {
@@ -493,109 +740,6 @@ namespace sf
         };
         BufferCache<GL_ARRAY_BUFFER> cache_vbo;
         BufferCache<GL_ARRAY_BUFFER> cache_ebo;
-
-        constexpr const char vertexShader[] = R"glsl(#version 100
-attribute vec2 position;
-attribute vec4 color;
-uniform mat4 projection;
-varying vec4 vertexColor;
-void main()
-{
-    gl_Position = projection * vec4(position, 0.0, 1.0);
-    vertexColor = color;
-})glsl";
-
-        constexpr const char fragmentShader[] = R"glsl(#version 100
-precision mediump float;
-varying vec4 vertexColor;
-void main()
-{
-    gl_FragColor = vertexColor;
-})glsl";
-
-        constexpr const char vertexArrayVertexShader[] = R"glsl(#version 100
-attribute vec2 position;
-attribute vec2 intex;
-attribute vec4 color;
-uniform mat4 projection;
-uniform vec2 texSize;
-varying vec4 vertexColor;
-varying vec2 vertexTexCoords;
-void main()
-{
-    gl_Position = projection * vec4(position, 0.0, 1.0);
-    vertexColor = color;
-    vertexTexCoords = intex / texSize;
-})glsl";
-
-        constexpr const char vertexArrayFragmentShader[] = R"glsl(#version 100
-precision mediump float;
-varying vec4 vertexColor;
-varying vec2 vertexTexCoords;
-uniform sampler2D tex;
-uniform bool textured;
-void main()
-{
-    if (!textured)
-        gl_FragColor = vertexColor;
-    else
-        gl_FragColor = texture2D(tex, vertexTexCoords) * vertexColor;
-})glsl";
-
-        constexpr const char shapeVertexShader[] = R"glsl(#version 100
-attribute vec2 position;
-uniform mat4 projection;
-void main()
-{
-    gl_Position = projection * vec4(position, 0.0, 1.0);
-})glsl";
-
-        constexpr const char shapeFragmentShader[] = R"glsl(#version 100
-precision mediump float;
-uniform vec4 fillColor;
-void main()
-{
-    gl_FragColor = fillColor;
-})glsl";
-
-        constexpr const char shapeTexturedVertexShader[] = R"glsl(#version 100
-uniform mat4 projection;
-uniform vec4 texInfo;
-uniform bool texFlip;
-attribute vec2 position;
-attribute vec2 intex;
-varying vec2 fragtex;
-void main()
-{
-    gl_Position = projection * vec4(position, 0.0, 1.0);
-    
-    fragtex = (texInfo.xy + intex) / texInfo.zw;
-    if (texFlip)
-        fragtex.y = fragtex.y * -1.0 + 1.0;
-})glsl";
-        constexpr const char shapeTexturedFragmentShader[] = R"glsl(#version 100
-precision mediump float;
-uniform sampler2D tex;
-uniform vec4 fillColor;
-uniform bool outline;
-varying vec2 fragtex;
-void main()
-{
-    if (!outline)
-        gl_FragColor = texture2D(tex, fragtex) * fillColor;
-    else
-        gl_FragColor = fillColor;
-})glsl";
-
-        constexpr const char textFragmentShader[] = R"glsl(#version 100
-precision mediump float;
-uniform sampler2D tex;
-uniform vec4 fillColor;
-varying vec2 fragtex;
-void main()
-{
-    gl_FragColor = vec4(1.0, 1.0, 1.0, texture2D(tex, fragtex).a) * fillColor;
-})glsl";
     }
 
     namespace sdl
@@ -1317,6 +1461,7 @@ void main()
         {
             if (context)
             {
+                shaders::Shader::shutdown();
                 SDL_GL_DeleteContext(context);
             }
 
@@ -1374,6 +1519,7 @@ void main()
     }
     void RenderWindow::close()
     {
+
         cache_vbo.shutdown();
         cache_ebo.shutdown();
         impl = std::make_unique<Impl>();
@@ -1438,6 +1584,7 @@ void main()
         glad_set_pre_callback(glad_debug_assert);
         glad_set_post_callback(glad_debug_assert);
 #endif
+        shaders::Shader::initialize();
         setTitle(title);
     }
     const ContextSettings& RenderWindow::getSettings() const
@@ -1726,31 +1873,14 @@ void main()
 
     void Shape::draw(RenderTarget& target, RenderStates states) const
     {
-        static Shader filledShader;
-        if (!filledShader)
-        {
-            sf::MemoryInputStream vertexShaderStream, fragmentShaderStream;
-            vertexShaderStream.open(shapeVertexShader, strlen(shapeVertexShader) + 1);
-            fragmentShaderStream.open(shapeFragmentShader, strlen(shapeFragmentShader) + 1);
-            filledShader.loadFromStream(vertexShaderStream, fragmentShaderStream);
-        }
-
-        static Shader texturedShader;
-        if (!texturedShader)
-        {
-            sf::MemoryInputStream vertexShaderStream, fragmentShaderStream;
-            vertexShaderStream.open(shapeTexturedVertexShader, strlen(shapeTexturedVertexShader) + 1);
-            fragmentShaderStream.open(shapeTexturedFragmentShader, strlen(shapeTexturedFragmentShader) + 1);
-            texturedShader.loadFromStream(vertexShaderStream, fragmentShaderStream);
-        }
-
         // Skip if it's an empty shape,
         // or it's fully transparent.
         const auto isTransparent = fill.a == 0 && outline.a == 0;
         if (elementCount > 0 && !isTransparent)
         {
             // Setup shader.
-            ScopedShader guard(texture ? texturedShader : filledShader);
+            auto& shader = shaders::Shader::get(texture ? shaders::shaders::shape_textured : shaders::shaders::shape);
+            ScopedShader guard(*shader.get());
             ScopedTexture textureGuard{ texture };
             // Constants (uniforms)
             const auto& view = target.getView();
@@ -1761,9 +1891,9 @@ void main()
             );
            // glm::mat4 projection = glm::ortho(0.f, float(target.getView().getSize().x), float(target.getView().getSize().y), 0.f, -1.f, 1.f);
             glm::mat4 model = getTransform();
-            guard.get().setUniform("projection", projection * model);
-            guard.get().setUniform("fillColor", fill);
-            guard.get().setUniform("outline", false);
+            glUniformMatrix4fv(shader.uniform(shaders::uniforms::projection), 1, GL_FALSE, glm::value_ptr(projection * model));
+            glUniform4fv(shader.uniform(shaders::uniforms::fillColor), 1, glm::value_ptr(Glsl::Vec4{ fill }.vector));
+            glUniform1i(shader.uniform(shaders::uniforms::outline), false);
             glm::vec4 texInfo{ 0.f, 0.f, 1.f, 1.f };
             if (texture)
             {
@@ -1772,17 +1902,18 @@ void main()
                 texInfo.z = float(texture->getSize().x) / getTextureRect().width;
                 texInfo.w = float(texture->getSize().y) / getTextureRect().height;
             }
-            guard.get().setUniform("texFlip", texture ? texture->isFlipped() : false);
-            guard.get().setUniform("texInfo", texInfo);
+
+            glUniform1i(shader.uniform(shaders::uniforms::texFlip), texture ? texture->isFlipped() : false);
+            glUniform4fv(shader.uniform(shaders::uniforms::texInfo), 1, glm::value_ptr(texInfo));
 
             // Buffers
             ScopedBufferBinding<GL_ARRAY_BUFFER> vbo{ buffers[0] };
 
             // Vertex attributes
-            auto posAttrib = guard.get().attribute("position");
+            auto posAttrib = shader.attribute(shaders::attributes::position);
             glEnableVertexAttribArray(posAttrib);
             glVertexAttribPointer(posAttrib, 2, GL_FLOAT, GL_FALSE, sizeof(VertexInfo), (GLvoid*)0);
-            auto texAttrib = guard.get().attribute("intex");
+            auto texAttrib = shader.attribute(shaders::attributes::intex);
             if (texAttrib >= 0)
             {
                 glEnableVertexAttribArray(texAttrib);
@@ -1800,14 +1931,14 @@ void main()
             // outline
             if (outlineThickness > 0.f && outline.a > 0)
             {
-                guard.get().setUniform("outline", true);
+                glUniform1i(shader.uniform(shaders::uniforms::outline), true);
                 // setup state.
                 auto smoothed = false;
                 GLfloat currentWidth = 0.f;
                 glGetFloatv(GL_LINE_WIDTH, &currentWidth);
                 glLineWidth(outlineThickness);
                 ScopedBufferBinding<GL_ELEMENT_ARRAY_BUFFER> ebo{ buffers[2] };
-                guard.get().setUniform("fillColor", outline);
+                glUniform4fv(shader.uniform(shaders::uniforms::fillColor), 1, glm::value_ptr(Glsl::Vec4{ outline }.vector));
                 glDrawElements(GL_LINE_STRIP, outlineElementCount, outlineElementType, (GLvoid*)0);
                 // cleanup state
                 glLineWidth(currentWidth);
@@ -2082,18 +2213,9 @@ void main()
         constexpr bool useTextSpecific = true;
         if constexpr (useTextSpecific)
         {
-            static Shader texturedShader;
-            if (!texturedShader)
-            {
-                sf::MemoryInputStream vertexShaderStream, fragmentShaderStream;
-                vertexShaderStream.open(shapeTexturedVertexShader, strlen(shapeTexturedVertexShader) + 1);
-                fragmentShaderStream.open(textFragmentShader, strlen(textFragmentShader) + 1);
-                texturedShader.loadFromStream(vertexShaderStream, fragmentShaderStream);
-            }
-
-
+            auto& shader = shaders::Shader::get(shaders::shaders::text);
             // Setup shader.
-            ScopedShader guard(texturedShader);
+            ScopedShader guard(*shader.get());
             ScopedTexture textureGuard(texture);
             // Constants (uniforms)
             const auto& view = target.getView();
@@ -2104,21 +2226,21 @@ void main()
                 view.getCenter().y - view.getSize().y / 2.f);
             //glm::mat4 projection = glm::ortho(0.f, float(target.getView().getSize().x), float(target.getView().getSize().y), 0.f, -1.f, 1.f);
             glm::mat4 model = getTransform();
-            guard.get().setUniform("projection", projection * model);
-            guard.get().setUniform("texInfo", glm::vec4{ 0.f, 0.f, 1.f, 1.f });
-            guard.get().setUniform("texFlip", false);
-            guard.get().setUniform("fillColor", fill);
+            glUniformMatrix4fv(shader.uniform(shaders::uniforms::projection), 1, GL_FALSE, glm::value_ptr(projection * model));
+            glUniform4fv(shader.uniform(shaders::uniforms::texInfo), 1, glm::value_ptr(glm::vec4{ 0.f, 0.f, 1.f, 1.f }));
+            glUniform1i(shader.uniform(shaders::uniforms::texFlip), false);
+            glUniform4fv(shader.uniform(shaders::uniforms::fillColor), 1, glm::value_ptr(Glsl::Vec4{ fill }.vector));
 
             // Buffers
             ScopedBufferBinding<GL_ARRAY_BUFFER> vbo{ buffers[0] };
             ScopedBufferBinding<GL_ELEMENT_ARRAY_BUFFER> ebo{ buffers[1] };
 
             // Vertex attributes
-            auto posAttrib = guard.get().attribute("position");
+            auto posAttrib = shader.attribute(shaders::attributes::position);
             constexpr auto vertexTypeSize = sizeof(VertexInfo);
             glEnableVertexAttribArray(posAttrib);
             glVertexAttribPointer(posAttrib, 2, GL_FLOAT, GL_FALSE, vertexTypeSize, (GLvoid*)0);
-            auto texAttrib = guard.get().attribute("intex");
+            auto texAttrib = shader.attribute(shaders::attributes::intex);
             glEnableVertexAttribArray(texAttrib);
             glVertexAttribPointer(texAttrib, 2, GL_FLOAT, GL_FALSE, vertexTypeSize, (GLvoid*)sizeof(Vector2f));
             glDrawElements(GL_TRIANGLES, textLength * 6, element_type_for_size(textLength), (GLvoid*)0);
@@ -2424,16 +2546,6 @@ void main()
     }
     void VertexArray::draw(RenderTarget&target, RenderStates states) const
     {
-        static Shader shader;
-        if (!shader)
-        {
-            sf::MemoryInputStream vertexShaderStream, fragmentShaderStream;
-            vertexShaderStream.open(vertexArrayVertexShader, strlen(vertexArrayVertexShader) + 1);
-            fragmentShaderStream.open(vertexArrayFragmentShader, strlen(vertexArrayFragmentShader) + 1);
-            shader.loadFromStream(vertexShaderStream, fragmentShaderStream);
-        }
-
-
         ScopedBufferBinding<GL_ARRAY_BUFFER> vbo{ buffers[0] };
         ScopedBufferBinding<GL_ELEMENT_ARRAY_BUFFER> ebo{ elements.empty() ? GL_NONE : buffers[1] };
 
@@ -2453,15 +2565,16 @@ void main()
             view.getCenter().y + view.getSize().y / 2.f,
             view.getCenter().y - view.getSize().y / 2.f);
         //glm::mat4 projection = glm::ortho(0.f, float(target.getView().getSize().x), float(target.getView().getSize().y), 0.f, -1.f, 1.f);
-        ScopedShader guard(shader);
-        auto posAttrib = guard.get().attribute("position");
-        auto colorAttrib = guard.get().attribute("color");
-        auto texAttrib = guard.get().attribute("intex");
-        guard.get().setUniform("projection", projection);
-        guard.get().setUniform("textured", states.texture != nullptr);
+        auto& shader = shaders::Shader::get(shaders::shaders::vertex_array);
+        ScopedShader guard(*shader.get());
+        auto posAttrib = shader.attribute(shaders::attributes::position);
+        auto colorAttrib = shader.attribute(shaders::attributes::color);
+        auto texAttrib = shader.attribute(shaders::attributes::intex);
+        glUniformMatrix4fv(shader.uniform(shaders::uniforms::projection), 1, GL_FALSE, glm::value_ptr(projection));
+        glUniform1i(shader.uniform(shaders::uniforms::textured), states.texture != nullptr);
         Vector2f texSize{ states.texture ? Vector2f(states.texture->getSize()) : Vector2f{1.f, 1.f} };
-        guard.get().setUniform("texSize", texSize);
-        guard.get().setUniform("texFlip", states.texture ? states.texture->isFlipped() : false);
+        glUniform2fv(shader.uniform(shaders::uniforms::texSize), 1, glm::value_ptr(glm::vec2{ texSize.x, texSize.y }));
+        glUniform1i(shader.uniform(shaders::uniforms::texFlip), states.texture ? states.texture->isFlipped() : false);
         glEnableVertexAttribArray(posAttrib);
         glEnableVertexAttribArray(colorAttrib);
         glEnableVertexAttribArray(texAttrib);
