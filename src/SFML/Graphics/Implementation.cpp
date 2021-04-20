@@ -2302,7 +2302,8 @@ namespace sf
 
     Texture::~Texture()
     {
-        glDeleteTextures(1, &glObject);
+        if (glObject)
+            glDeleteTextures(1, &glObject);
     }
     Vector2u Texture::getSize() const
     {
