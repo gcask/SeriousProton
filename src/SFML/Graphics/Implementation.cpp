@@ -1863,7 +1863,7 @@ void main()
         
         ScopedBufferBinding<GL_ARRAY_BUFFER> vbo{ buffers[buffer_cast(Buffer::Vertex)] };
         // update our VBO.
-        glBufferData(GL_ARRAY_BUFFER, count * sizeof(decltype(*vertices)), vertices, GL_STATIC_DRAW);
+        glBufferSubData(GL_ARRAY_BUFFER, 0, count * sizeof(decltype(*vertices)), vertices);
     }
     void Shape::setOutlineElements(const void* elements, size_t typeSize, size_t count)
     {
@@ -1873,7 +1873,7 @@ void main()
         // update our outline EBO.
         ScopedBufferBinding<GL_ELEMENT_ARRAY_BUFFER> ebo{ buffers[buffer_cast(Buffer::ElementsOutline)] };
         
-        glBufferData(GL_ELEMENT_ARRAY_BUFFER, count * typeSize, elements, GL_STATIC_DRAW);
+        glBufferSubData(GL_ELEMENT_ARRAY_BUFFER, 0, count * typeSize, elements);
         outlineElementCount = count;
         switch (typeSize)
         {
