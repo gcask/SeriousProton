@@ -331,6 +331,13 @@ void main()
                     }
                 }
             }
+            
+
+            // text constants.
+            glUseProgram(shaders[shaders_t(shaders::text)].shader.getNativeHandle());
+            glUniform4fv(shaders[shaders_t(shaders::text)].uniform(uniforms::texInfo), 1, glm::value_ptr(glm::vec4{ 0.f, 0.f, 1.f, 1.f }));
+            glUniform1i(shaders[shaders_t(shaders::text)].uniform(uniforms::texFlip), false);
+
             glUseProgram(GL_NONE);
         }
 
@@ -2227,8 +2234,6 @@ namespace sf
             //glm::mat4 projection = glm::ortho(0.f, float(target.getView().getSize().x), float(target.getView().getSize().y), 0.f, -1.f, 1.f);
             glm::mat4 model = getTransform();
             glUniformMatrix4fv(shader.uniform(shaders::uniforms::projection), 1, GL_FALSE, glm::value_ptr(projection * model));
-            glUniform4fv(shader.uniform(shaders::uniforms::texInfo), 1, glm::value_ptr(glm::vec4{ 0.f, 0.f, 1.f, 1.f }));
-            glUniform1i(shader.uniform(shaders::uniforms::texFlip), false);
             glUniform4fv(shader.uniform(shaders::uniforms::fillColor), 1, glm::value_ptr(Glsl::Vec4{ fill }.vector));
 
             // Buffers
