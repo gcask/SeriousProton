@@ -57,8 +57,9 @@ class FileResourceStream : public ResourceStream
 public:
     FileResourceStream(string filename)
     {
+#ifndef ANDROID
         std::error_code ec;
-        if(!std::filesystem::is_regular_file(filename.c_str()), ec)
+        if(!std::filesystem::is_regular_file(filename.c_str(), ec))
         {
             if(ec)
             {
@@ -68,6 +69,10 @@ public:
         }
         else
             open_success = stream.open(filename);
+#else
+        //Android reads from the assets bundle, so we cannot check if the file exists and is a regular file
+        open_success = stream.open(filename);
+#endif
     }
     virtual ~FileResourceStream()
     {
