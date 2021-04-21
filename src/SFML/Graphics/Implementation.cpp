@@ -427,14 +427,17 @@ namespace sf
                 :guarded{shader}
             {
                 auto wantsToBind = shader.getNativeHandle();
-                if (bounded.empty() || bounded.top() != wantsToBind)
+                if (bounded.empty() && wantsToBind != 0 || !bounded.empty() && bounded.top() != wantsToBind)
+                {
                     Shader::bind(&shader);
-                bounded.push(wantsToBind);
+                    bounded.push(wantsToBind);
+                }
             }
 
             ~ScopedShader()
             {
-                SDL_assert(!bounded.empty());
+                if (bounded.empty())
+                    return;
                 auto currentlyBound = bounded.top();
                 bounded.pop();
                 if (bounded.empty())
@@ -544,13 +547,8 @@ namespace sf
             explicit ScopedBlending(BlendMode mode)
                 :current{ mode }
             {
-                if (bounded.empty() || bounded.top() != current)
+                if (bounded.empty() && current != RenderStates::Default.blend || !bounded.empty() && bounded.top() != current)
                 {
-                    if (bounded.empty())
-                    {
-                        glEnable(GL_BLEND);
-                    }
-
                     glBlendFuncSeparate(
                         gl::blendfactor_cast(mode.color.src), gl::blendfactor_cast(mode.color.dst),
                         gl::blendfactor_cast(mode.alpha.src), gl::blendfactor_cast(mode.alpha.dst)
@@ -560,21 +558,44 @@ namespace sf
                         gl::blendequation_cast(mode.color.blend),
                         gl::blendequation_cast(mode.alpha.blend)
                     );
+
+                    bounded.push(current);
                 }
 
-                bounded.push(current);
+                
             }
 
             ~ScopedBlending()
             {
+                if (bounded.empty())
+                    return;
                 bounded.pop();
+
                 if (bounded.empty())
                 {
-                    glDisable(GL_BLEND);
+                    auto mode = RenderStates::Default.blend;
+                    glBlendFuncSeparate(
+                        gl::blendfactor_cast(mode.color.src), gl::blendfactor_cast(mode.color.dst),
+                        gl::blendfactor_cast(mode.alpha.src), gl::blendfactor_cast(mode.alpha.dst)
+                    );
+
+                    glBlendEquationSeparate(
+                        gl::blendequation_cast(mode.color.blend),
+                        gl::blendequation_cast(mode.alpha.blend)
+                    );
                 }
                 else if (current != bounded.top())
                 {
+                    auto mode = bounded.top();
+                    glBlendFuncSeparate(
+                        gl::blendfactor_cast(mode.color.src), gl::blendfactor_cast(mode.color.dst),
+                        gl::blendfactor_cast(mode.alpha.src), gl::blendfactor_cast(mode.alpha.dst)
+                    );
 
+                    glBlendEquationSeparate(
+                        gl::blendequation_cast(mode.color.blend),
+                        gl::blendequation_cast(mode.alpha.blend)
+                    );
                 }
             }
         private:
@@ -1387,6 +1408,7 @@ namespace sf
     {
         glDisable(GL_DEPTH_TEST);
         glDisable(GL_CULL_FACE);
+        glDisable(GL_BLEND);
     }
 
     void RenderTarget::resetGLStates()
@@ -1396,6 +1418,22 @@ namespace sf
 
         glDisable(GL_DEPTH_TEST);
         glDisable(GL_CULL_FACE);
+
+        // Reset default blend.
+        glEnable(GL_BLEND);
+        {
+            auto& mode = RenderStates::Default.blend;
+            glBlendFuncSeparate(
+                gl::blendfactor_cast(mode.color.src), gl::blendfactor_cast(mode.color.dst),
+                gl::blendfactor_cast(mode.alpha.src), gl::blendfactor_cast(mode.alpha.dst)
+            );
+
+            glBlendEquationSeparate(
+                gl::blendequation_cast(mode.color.blend),
+                gl::blendequation_cast(mode.alpha.blend)
+            );
+        }
+
     }
 #pragma endregion RenderTarget
 #pragma region RenderTexture
@@ -1601,6 +1639,7 @@ namespace sf
 #endif
         shaders::Shader::initialize();
         setTitle(title);
+        resetGLStates();
     }
     const ContextSettings& RenderWindow::getSettings() const
     {
