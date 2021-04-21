@@ -438,7 +438,11 @@ namespace sf
                 auto currentlyBound = bounded.top();
                 bounded.pop();
                 if (bounded.empty())
+                {
+#ifndef NDEBUG
                     glUseProgram(GL_NONE);
+#endif
+                }
                 else if (bounded.top() != currentlyBound)
                     glUseProgram(bounded.top());
             }
@@ -453,15 +457,12 @@ namespace sf
             explicit ScopedTexture(const Texture* texture)
                 :guarded{ texture }
             {
-                if (!guarded)
-                    return;
                 auto wantsToBind = texture ? texture->glObject : GL_NONE;
-                if (bounded.empty() || bounded.top() != wantsToBind)
+                if (bounded.empty() && wantsToBind != 0 || !bounded.empty() && bounded.top() != wantsToBind)
                 {
                     Texture::bind(guarded);
+                    bounded.push(wantsToBind);
                 }
-
-                bounded.push(wantsToBind);
             }
             explicit ScopedTexture(const Texture& texture)
                 :ScopedTexture(&texture)
@@ -469,7 +470,7 @@ namespace sf
             }
             ~ScopedTexture()
             {
-                if (!guarded)
+                if (bounded.empty())
                     return;
                 auto currentlyBound = bounded.top();
                 bounded.pop();
@@ -497,11 +498,11 @@ namespace sf
                 :guarded{ texture }
             {
                 auto wantsToBind = texture ? texture->glObject : GL_NONE;
-                if (bounded.empty() || bounded.top() != wantsToBind)
+                if (bounded.empty() && wantsToBind != 0 || !bounded.empty() && bounded.top() != wantsToBind)
                 {
                     glBindFramebuffer(GL_FRAMEBUFFER, wantsToBind);
+                    bounded.push(wantsToBind);
                 }
-                bounded.push(wantsToBind);
             }
 
             explicit ScopedRenderTarget(const RenderTarget& texture)
@@ -510,14 +511,14 @@ namespace sf
 
             ~ScopedRenderTarget()
             {
+                if (bounded.empty())
+                    return;
                 auto currentlyBound = bounded.top();
                 bounded.pop();
                 
                 if (bounded.empty())
                 {
-#ifndef NDEBUG
                     glBindFramebuffer(GL_FRAMEBUFFER, GL_NONE);
-#endif
                 }
                 else if (currentlyBound != bounded.top())
                     glBindFramebuffer(GL_FRAMEBUFFER, bounded.top());
@@ -588,13 +589,17 @@ namespace sf
             explicit ScopedBufferBinding(uint32_t buffer)
                 :buffer{buffer}
             {
-                if (bounded.empty() || bounded.top() != buffer)
+                if (bounded.empty() && buffer != 0 || !bounded.empty() && bounded.top() != buffer)
+                {
                     glBindBuffer(Target, buffer);
-                bounded.push(buffer);
+                    bounded.push(buffer);
+                }
             }
 
             ~ScopedBufferBinding()
             {
+                if (bounded.empty())
+                    return;
                 auto bound = bounded.top();
                 bounded.pop();
 
