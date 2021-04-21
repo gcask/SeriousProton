@@ -453,6 +453,8 @@ namespace sf
             explicit ScopedTexture(const Texture* texture)
                 :guarded{ texture }
             {
+                if (!guarded)
+                    return;
                 auto wantsToBind = texture ? texture->glObject : GL_NONE;
                 if (bounded.empty() || bounded.top() != wantsToBind)
                 {
@@ -467,6 +469,8 @@ namespace sf
             }
             ~ScopedTexture()
             {
+                if (!guarded)
+                    return;
                 auto currentlyBound = bounded.top();
                 bounded.pop();
 
@@ -484,7 +488,6 @@ namespace sf
             const Texture* get() const { return guarded; }
         private:
             const Texture* guarded = nullptr;
-            GLint previouslyBound = 0;
         };
 
         struct ScopedRenderTarget final
