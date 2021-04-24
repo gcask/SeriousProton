@@ -1528,9 +1528,10 @@ namespace sf
 
         ScopedRenderTarget guard{ this };
         ScopedTexture guardTex{ texture };
+        texture.forceUpdate();
         glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
         texture.size = { width, height };
-        texture.forceUpdate();
+          
         glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, texture.glObject, 0);
         if (depthBuffer)
         {
