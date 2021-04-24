@@ -77,19 +77,29 @@ void TextureManager::loadTexture(const string& name, sf::Vector2i subDiv)
     P<ResourceStream> stream;
     if (GLAD_GL_EXT_texture_compression_s3tc || GLAD_GL_KHR_texture_compression_astc_ldr)
     {
-        std::string_view name_view{ name };
-        auto extension = name_view.find_last_of('.');
-        if (extension != name_view.npos)
+        // Follow the same 'search protocol':
+        // - first assume without extension (just add ours).
+        // - If nothing's found, assume the extension's there (find last dot, remove extension).
+        auto try_load = [&stream](const std::string& name)
         {
-            name_view = name_view.substr(0, extension);
+            if (GLAD_GL_KHR_texture_compression_astc_ldr)
+                stream = getResourceStream(name + "-astc.ktx");
+            if (!stream && GLAD_GL_EXT_texture_compression_s3tc)
+                stream = getResourceStream(name + "-dxt.ktx");
+        };
+        
+        try_load(name);
+        if (!stream)
+        {
+            std::string_view name_view{ name };
+            auto extension = name_view.find_last_of('.');
+            if (extension != name_view.npos)
+            {
+                name_view = name_view.substr(0, extension);
+                std::string basename{ name_view };
+                try_load(basename);
+            }
         }
-
-        std::string basename{ name_view };
-
-        if (GLAD_GL_KHR_texture_compression_astc_ldr)
-            stream = getResourceStream(basename + "-astc.ktx");
-        if (!stream && GLAD_GL_EXT_texture_compression_s3tc)
-            stream = getResourceStream(basename + "-dxt.ktx");
     }
     
     if (!stream)
