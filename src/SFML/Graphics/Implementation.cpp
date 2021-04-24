@@ -93,6 +93,11 @@ namespace
         SDL_assert(error_code == GL_NO_ERROR);
     }
 
+    void gl_debug_callback(GLenum source, GLenum type, GLuint id, GLenum severity, GLsizei length, const GLchar* message, const void* /*user*/)
+    {
+        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "%08X: %s", id, message);
+    }
+
     namespace shaders
     {
         constexpr std::array trivial{
@@ -120,7 +125,7 @@ uniform mat4 projection;
 uniform vec2 texSize;
 attribute vec2 position;
 attribute vec2 intex;
-attribute vec4 color;
+attribute lowp vec4 color;
 
 varying lowp vec4 vertexColor;
 varying vec2 vertexTexCoords;
@@ -371,7 +376,7 @@ namespace sf
                 case TriangleFan:
                     return GL_TRIANGLE_FAN;
                 case Quads:
-                    assert(false && "Quads are not supported!");
+                    SDL_assert_always(false && "Quads are not supported!");
                 }
 
                 return GL_NONE;
@@ -422,15 +427,31 @@ namespace sf
         }
         struct ScopedShader final
         {
-            static inline std::stack<uint32_t> bounded{};
+            static inline std::stack<std::tuple<uint32_t, uint32_t>> bounded{};
             explicit ScopedShader(Shader& shader)
                 :guarded{shader}
             {
                 auto wantsToBind = shader.getNativeHandle();
-                if (bounded.empty() && wantsToBind != 0 || !bounded.empty() && bounded.top() != wantsToBind)
+                if (bounded.empty())
                 {
-                    Shader::bind(&shader);
-                    bounded.push(wantsToBind);
+                    if (wantsToBind != 0)
+                    {
+                        Shader::bind(&shader);
+                        bounded.emplace(wantsToBind, 1);
+                    }
+                }
+                else
+                {
+                    auto& top = bounded.top();
+                    if (std::get<0>(top) != wantsToBind)
+                    {
+                        Shader::bind(&shader);
+                        bounded.emplace(wantsToBind, 1);
+                    }
+                    else
+                    {
+                        std::get<1>(top) += 1;
+                    }
                 }
             }
 
@@ -438,16 +459,23 @@ namespace sf
             {
                 if (bounded.empty())
                     return;
-                auto currentlyBound = bounded.top();
-                bounded.pop();
-                if (bounded.empty())
+
+                auto& top = bounded.top();
+                std::get<1>(top) -= 1;
+                if (std::get<1>(top) == 0)
                 {
+                    bounded.pop();
+                    if (!bounded.empty())
+                    {
+                        glUseProgram(std::get<0>(bounded.top()));
+                    }
 #ifndef NDEBUG
-                    glUseProgram(GL_NONE);
+                    else
+                    {
+                        glUseProgram(GL_NONE);
+                    }
 #endif
                 }
-                else if (bounded.top() != currentlyBound)
-                    glUseProgram(bounded.top());
             }
             Shader& get() const { return guarded; }
         private:
@@ -456,15 +484,31 @@ namespace sf
 
         struct ScopedTexture final
         {
-            static inline std::stack<uint32_t> bounded{};
+            static inline std::stack<std::tuple<uint32_t, uint32_t>> bounded{};
             explicit ScopedTexture(const Texture* texture)
                 :guarded{ texture }
             {
                 auto wantsToBind = texture ? texture->glObject : GL_NONE;
-                if (bounded.empty() && wantsToBind != 0 || !bounded.empty() && bounded.top() != wantsToBind)
+                if (bounded.empty())
                 {
-                    Texture::bind(guarded);
-                    bounded.push(wantsToBind);
+                    if (wantsToBind != 0)
+                    {
+                        Texture::bind(guarded);
+                        bounded.emplace(wantsToBind, 1);
+                    }
+                }
+                else
+                {
+                    auto& top = bounded.top();
+                    if (std::get<0>(top) == wantsToBind)
+                    {
+                        std::get<1>(top) += 1;
+                    }
+                    else
+                    {
+                        Texture::bind(guarded);
+                        bounded.emplace(wantsToBind, 1);
+                    }
                 }
             }
             explicit ScopedTexture(const Texture& texture)
@@ -475,18 +519,23 @@ namespace sf
             {
                 if (bounded.empty())
                     return;
-                auto currentlyBound = bounded.top();
-                bounded.pop();
+                auto& top = bounded.top();
+                std::get<1>(top) -= 1;
+                if (std::get<1>(top) == 0)
+                {
+                    bounded.pop();
 
-                if (bounded.empty())
-                {
-#ifndef NDEBUG
-                    glBindTexture(GL_TEXTURE_2D, GL_NONE);
+                    if (!bounded.empty())
+                    {
+                        glBindTexture(GL_TEXTURE_2D, std::get<0>(bounded.top()));
+
+                    }
+#ifdef NDEBUG
+                    else
+                    {
+                        glBindTexture(GL_TEXTURE_2D, GL_NONE);
+                    }
 #endif
-                }
-                else if (currentlyBound != bounded.top())
-                {
-                    glBindTexture(GL_TEXTURE_2D, bounded.top());
                 }
             }
             const Texture* get() const { return guarded; }
@@ -496,15 +545,31 @@ namespace sf
 
         struct ScopedRenderTarget final
         {
-            static inline std::stack<uint32_t> bounded{};
+            static inline std::stack<std::tuple<uint32_t, uint32_t>> bounded{};
             explicit ScopedRenderTarget(const RenderTarget* texture)
                 :guarded{ texture }
             {
                 auto wantsToBind = texture ? texture->glObject : GL_NONE;
-                if (bounded.empty() && wantsToBind != 0 || !bounded.empty() && bounded.top() != wantsToBind)
+                if (bounded.empty())
                 {
-                    glBindFramebuffer(GL_FRAMEBUFFER, wantsToBind);
-                    bounded.push(wantsToBind);
+                    if (wantsToBind != 0)
+                    {
+                        glBindFramebuffer(GL_FRAMEBUFFER, wantsToBind);
+                        bounded.emplace(wantsToBind, 1);
+                    }
+                }
+                else
+                {
+                    auto& top = bounded.top();
+                    if (std::get<0>(top) == wantsToBind)
+                    {
+                        std::get<1>(top) += 1;
+                    }
+                    else
+                    {
+                        glBindFramebuffer(GL_FRAMEBUFFER, wantsToBind);
+                        bounded.emplace(wantsToBind, 1);
+                    }
                 }
             }
 
@@ -516,15 +581,22 @@ namespace sf
             {
                 if (bounded.empty())
                     return;
-                auto currentlyBound = bounded.top();
-                bounded.pop();
-                
-                if (bounded.empty())
+
+                auto& top = bounded.top();
+                std::get<1>(top) -= 1;
+                if (std::get<1>(top) == 0)
                 {
-                    glBindFramebuffer(GL_FRAMEBUFFER, GL_NONE);
+                    bounded.pop();
+                    if (!bounded.empty())
+                    {
+                        glBindFramebuffer(GL_FRAMEBUFFER, std::get<0>(bounded.top()));
+                    }
+                    else
+                    {
+                        glBindFramebuffer(GL_FRAMEBUFFER, GL_NONE);
+                    }
                 }
-                else if (currentlyBound != bounded.top())
-                    glBindFramebuffer(GL_FRAMEBUFFER, bounded.top());
+                    
             }
             const RenderTarget* get() const { return guarded; }
         private:
@@ -798,7 +870,7 @@ namespace sf
         int read_rwops(void* user, char* data, int size)
         {
             auto ops = static_cast<SDL_RWops*>(user);
-            return SDL_RWread(ops, data, 1, size);
+            return static_cast<int>(SDL_RWread(ops, data, 1, size));
         }
         void skip_rwops(void* user, int n)
         {
@@ -1021,7 +1093,6 @@ namespace sf
     {
         struct Atlas final
         {
-            ~Atlas() = default;
             std::vector<stbtt_packedchar> chars;
             Texture tex;
             Vector2u size = { 0, 0 };
@@ -1074,6 +1145,7 @@ namespace sf
                 glGenTextures(1, &atlas.tex.glObject);
                 ScopedTexture guard{ atlas.tex };
                 glTexImage2D(GL_TEXTURE_2D, 0, GL_ALPHA, atlas.size.x, atlas.size.y, 0, GL_ALPHA, GL_UNSIGNED_BYTE, atlasData.data());
+
                 atlas.tex.setSmooth(true);
                 atlas.tex.setRepeated(true);
                 atlas.tex.forceUpdate();
@@ -1406,9 +1478,7 @@ namespace sf
     }
     void RenderTarget::pushGLStates()
     {
-        glDisable(GL_DEPTH_TEST);
-        glDisable(GL_CULL_FACE);
-        glDisable(GL_BLEND);
+        resetGLStates();
     }
 
     void RenderTarget::resetGLStates()
@@ -1636,6 +1706,16 @@ namespace sf
 #if defined(GLAD_DEBUG)
         glad_set_pre_callback(glad_debug_assert);
         glad_set_post_callback(glad_debug_assert);
+        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, reinterpret_cast<const char *>(glGetString(GL_EXTENSIONS)));
+        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "VAO Support: %s", GLAD_GL_OES_vertex_array_object ? "yes" : "no");
+#endif
+#ifndef NDEBUG
+        if constexpr (false) //(GLAD_GL_KHR_debug)
+        {
+            glDebugMessageCallback(gl_debug_callback, nullptr);
+            glDebugMessageControl(GL_DONT_CARE, GL_DONT_CARE, GL_DEBUG_SEVERITY_HIGH, 0, nullptr, GL_TRUE);
+            //glEnable(GL_DEBUG_OUTPUT);
+        }
 #endif
         shaders::Shader::initialize();
         setTitle(title);
@@ -1951,10 +2031,10 @@ namespace sf
             glm::vec4 texInfo{ 0.f, 0.f, 1.f, 1.f };
             if (texture)
             {
-                texInfo.x = getTextureRect().left;
-                texInfo.y = getTextureRect().top;
-                texInfo.z = float(texture->getSize().x) / getTextureRect().width;
-                texInfo.w = float(texture->getSize().y) / getTextureRect().height;
+                texInfo.x = static_cast<float>(getTextureRect().left);
+                texInfo.y = static_cast<float>(getTextureRect().top);
+                texInfo.z = static_cast<float>(texture->getSize().x) / getTextureRect().width;
+                texInfo.w = static_cast<float>(texture->getSize().y) / getTextureRect().height;
             }
 
             glUniform1i(shader.uniform(shaders::uniforms::texFlip), texture ? texture->isFlipped() : false);
@@ -2347,6 +2427,33 @@ namespace sf
     {
     }
 
+    Texture::Texture(Texture&& other)
+        : glObject{ other.glObject }
+        , size{other.size}
+        , repeated{other.repeated}
+        , smooth{other.smooth}
+        , flipped{other.flipped}
+    {
+        other.glObject = 0;
+    }
+
+    Texture& Texture::operator=(Texture&& other)
+    {
+        if (this != &other)
+        {
+            if (glObject)
+                glDeleteTextures(1, &glObject);
+            glObject = 0;
+            std::swap(glObject, other.glObject);
+            size = other.size;
+            repeated = other.repeated;
+            smooth = other.smooth;
+            flipped = other.flipped;
+        }
+
+        return *this;
+    }
+
     Texture::~Texture()
     {
         if (glObject)
@@ -2460,7 +2567,7 @@ namespace sf
             if (glObject)
             {
                 ScopedTexture guard{ *this };
-                updateRepeat();
+                updateSmooth();
             }
         }
     }
@@ -2597,6 +2704,7 @@ namespace sf
     {
         return vertices.size();
     }
+
     void VertexArray::draw(RenderTarget&target, RenderStates states) const
     {
         ScopedBufferBinding<GL_ARRAY_BUFFER> vbo{ buffers[0] };

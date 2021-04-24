@@ -17,6 +17,10 @@ namespace sf
 
 		static void bind(const Texture* texture, CoordinateType coordinateType = Normalized);
 		Texture();
+		Texture(const Texture&) = delete;
+		Texture& operator=(const Texture&) = delete;
+		Texture(Texture&&);
+		Texture& operator=(Texture&&);
 		virtual ~Texture();
 		virtual Vector2u getSize() const;
 		bool loadFromImage(const Image& image, const IntRect& area = IntRect());
