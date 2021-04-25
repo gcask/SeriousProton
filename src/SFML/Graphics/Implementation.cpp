@@ -376,7 +376,7 @@ namespace sf
                 case TriangleFan:
                     return GL_TRIANGLE_FAN;
                 case Quads:
-                    SDL_assert_always(false && "Quads are not supported!");
+                    break; // No Quads in ES2!
                 }
 
                 return GL_NONE;
@@ -614,51 +614,61 @@ namespace sf
         }
         struct ScopedBlending final
         {
-            static inline std::stack<BlendMode> bounded{};
+            static inline std::stack<std::tuple<BlendMode, uint32_t>> bounded{};
         public:
             explicit ScopedBlending(BlendMode mode)
                 :current{ mode }
             {
-                if (bounded.empty() && current != RenderStates::Default.blend || !bounded.empty() && bounded.top() != current)
+                if (bounded.empty())
                 {
-                    glBlendFuncSeparate(
-                        gl::blendfactor_cast(mode.color.src), gl::blendfactor_cast(mode.color.dst),
-                        gl::blendfactor_cast(mode.alpha.src), gl::blendfactor_cast(mode.alpha.dst)
-                    );
-                    
-                    glBlendEquationSeparate(
-                        gl::blendequation_cast(mode.color.blend),
-                        gl::blendequation_cast(mode.alpha.blend)
-                    );
+                    if (current != RenderStates::Default.blend)
+                    {
+                        glBlendFuncSeparate(
+                            gl::blendfactor_cast(mode.color.src), gl::blendfactor_cast(mode.color.dst),
+                            gl::blendfactor_cast(mode.alpha.src), gl::blendfactor_cast(mode.alpha.dst)
+                        );
 
-                    bounded.push(current);
+                        glBlendEquationSeparate(
+                            gl::blendequation_cast(mode.color.blend),
+                            gl::blendequation_cast(mode.alpha.blend)
+                        );
+                        bounded.emplace(current, 1);
+                    }
                 }
+                else
+                {
+                    auto& top = bounded.top();
+                    if (!(std::get<0>(top) != current))
+                    {
+                        std::get<1>(top) += 1;
+                    }
+                    else
+                    {
+                        glBlendFuncSeparate(
+                            gl::blendfactor_cast(mode.color.src), gl::blendfactor_cast(mode.color.dst),
+                            gl::blendfactor_cast(mode.alpha.src), gl::blendfactor_cast(mode.alpha.dst)
+                        );
 
-                
+                        glBlendEquationSeparate(
+                            gl::blendequation_cast(mode.color.blend),
+                            gl::blendequation_cast(mode.alpha.blend)
+                        );
+                        bounded.emplace(current, 1);
+                    }
+                }
             }
 
             ~ScopedBlending()
             {
                 if (bounded.empty())
                     return;
-                bounded.pop();
-
-                if (bounded.empty())
+                auto& top = bounded.top();
+                
+                std::get<1>(top) -= 1;
+                if (std::get<1>(top) == 0)
                 {
-                    auto mode = RenderStates::Default.blend;
-                    glBlendFuncSeparate(
-                        gl::blendfactor_cast(mode.color.src), gl::blendfactor_cast(mode.color.dst),
-                        gl::blendfactor_cast(mode.alpha.src), gl::blendfactor_cast(mode.alpha.dst)
-                    );
-
-                    glBlendEquationSeparate(
-                        gl::blendequation_cast(mode.color.blend),
-                        gl::blendequation_cast(mode.alpha.blend)
-                    );
-                }
-                else if (current != bounded.top())
-                {
-                    auto mode = bounded.top();
+                    bounded.pop();
+                    auto mode = bounded.empty() ? RenderStates::Default.blend : std::get<0>(bounded.top());
                     glBlendFuncSeparate(
                         gl::blendfactor_cast(mode.color.src), gl::blendfactor_cast(mode.color.dst),
                         gl::blendfactor_cast(mode.alpha.src), gl::blendfactor_cast(mode.alpha.dst)
