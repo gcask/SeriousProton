@@ -11,10 +11,11 @@ namespace sf
 	public:
 		RenderTexture();
 		~RenderTexture();
-		bool create(unsigned int width, unsigned int height, bool depthBuffer);
+		bool create(uint32_t width, uint32_t height, const sf::ContextSettings& settings);
 		void setRepeated(bool repeated);
 		void setSmooth(bool smooth);
 		void display();
+		void setActive(bool);
 		const Texture& getTexture() const;
 		sf::Vector2u getSize() const override final;
 	private:

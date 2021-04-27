@@ -43,7 +43,9 @@ void PostProcessor::render(sf::RenderTarget& window)
         size = pixel_size;
 
         //Setup a backBuffer to render the game on. Then we can render the backbuffer back to the main screen with full-screen shader effects
-        renderTexture.create(size.x, size.y, true);
+        sf::ContextSettings settings{};
+        settings.depthBits = 24;
+        renderTexture.create(size.x, size.y, settings);
 
         renderTexture.setRepeated(true);
         renderTexture.setSmooth(true);

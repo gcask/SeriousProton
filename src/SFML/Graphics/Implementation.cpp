@@ -1011,21 +1011,29 @@ namespace sf
 #pragma endregion BlendMode
 #pragma region CircleShape
     CircleShape::CircleShape(float radius, std::size_t pointCount)
+        :points{pointCount}
     {
-        std::vector<uint16_t> elements(pointCount + 2);
-        std::vector<VertexInfo> vertices(pointCount + 1); // points + center
+        setRadius(radius);
+    }
+
+    void CircleShape::setRadius(float radius)
+    {
+        if (radius <= 0.f)
+            return;
+        std::vector<uint16_t> elements(points + 2);
+        std::vector<VertexInfo> vertices(points + 1); // points + center
         // First vertex is the center.
         vertices[0].position = { radius, radius };
         elements[0] = 0;
-        for (size_t i = 1; i < pointCount + 1; ++i)
+        for (size_t i = 1; i < points + 1; ++i)
         {
-            float angle = i * 2 * float(M_PI) / pointCount - float(M_PI) / 2;
+            float angle = i * 2 * float(M_PI) / points - float(M_PI) / 2;
             float x = std::cos(angle) * radius;
             float y = std::sin(angle) * radius;
             vertices[i].position = { radius + x, radius + y };
             elements[i] = static_cast<uint16_t>(i);
         }
-        elements[pointCount + 1] = 1;
+        elements[points + 1] = 1;
         setFilledElements(elements);
         setVertices(vertices);
         // For the outline, we want to "loop back" to the first (or last) vertex.
@@ -1528,7 +1536,7 @@ namespace sf
     {
         glDeleteRenderbuffers(1, &rbo);
     }
-    bool RenderTexture::create(unsigned int width, unsigned int height, bool depthBuffer)
+    bool RenderTexture::create(uint32_t width, uint32_t height, const sf::ContextSettings& settings)
     {
         if (glObject == GL_NONE)
         {
@@ -1543,21 +1551,24 @@ namespace sf
         texture.size = { width, height };
           
         glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, texture.glObject, 0);
-        if (depthBuffer)
+        if (settings.stencilBits != 0 || settings.depthBits != 0)
         {
             if (rbo == GL_NONE)
             {
                 glGenRenderbuffers(1, &rbo);
-                glBindRenderbuffer(GL_RENDERBUFFER, rbo);
-                glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH_COMPONENT, width, height);
-                glBindRenderbuffer(GL_RENDERBUFFER, GL_NONE);
+                
             }
+            glBindRenderbuffer(GL_RENDERBUFFER, rbo);
+            glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH24_STENCIL8_OES, width, height);
+            glBindRenderbuffer(GL_RENDERBUFFER, GL_NONE);
 
             glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, rbo);
+            glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_STENCIL_ATTACHMENT, GL_RENDERBUFFER, rbo);
         }
         else if (rbo != GL_NONE)
         {
             glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, GL_NONE);
+            glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_STENCIL_ATTACHMENT, GL_RENDERBUFFER, GL_NONE);
         }
 
         auto status = GL_NONE;
@@ -1575,6 +1586,10 @@ namespace sf
     void RenderTexture::display()
     {
         // noop?
+    }
+    void RenderTexture::setActive(bool active)
+    {
+        glBindFramebuffer(GL_FRAMEBUFFER, active ? glObject : GL_NONE);
     }
     const Texture& RenderTexture::getTexture() const
     {
@@ -2110,8 +2125,12 @@ namespace sf
     }
     void Shape::setFilledElements(const void* elements, size_t typeSize, size_t count)
     {
-        SDL_assert(buffers[buffer_cast(Buffer::ElementsFilled)] == 0);
-        buffers[buffer_cast(Buffer::ElementsFilled)] = cache_ebo.acquire(count * typeSize);
+        if (count * typeSize > cache_ebo.getSize(buffers[buffer_cast(Buffer::ElementsFilled)]))
+        {
+            cache_ebo.release(buffers[buffer_cast(Buffer::ElementsFilled)]);
+            buffers[buffer_cast(Buffer::ElementsFilled)] = cache_ebo.acquire(count * typeSize);
+        }
+        
         ScopedBufferBinding<GL_ELEMENT_ARRAY_BUFFER> ebo{ buffers[buffer_cast(Buffer::ElementsFilled)] };
         // update our EBO.
         glBufferSubData(GL_ELEMENT_ARRAY_BUFFER, 0, count * typeSize, elements);
@@ -2146,8 +2165,11 @@ namespace sf
     }
     void Shape::setOutlineElements(const void* elements, size_t typeSize, size_t count)
     {
-        SDL_assert(buffers[buffer_cast(Buffer::ElementsOutline)] == 0);
-        buffers[buffer_cast(Buffer::ElementsOutline)] = cache_ebo.acquire(count * typeSize);
+        if (count * typeSize > cache_ebo.getSize(buffers[buffer_cast(Buffer::ElementsOutline)]))
+        {
+            cache_ebo.release(buffers[buffer_cast(Buffer::ElementsOutline)]);
+            buffers[buffer_cast(Buffer::ElementsOutline)] = cache_ebo.acquire(count * typeSize);
+        }
 
         // update our outline EBO.
         ScopedBufferBinding<GL_ELEMENT_ARRAY_BUFFER> ebo{ buffers[buffer_cast(Buffer::ElementsOutline)] };
