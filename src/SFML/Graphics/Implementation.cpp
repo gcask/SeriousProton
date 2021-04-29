@@ -1526,6 +1526,10 @@ namespace sf
         }
 
     }
+    void RenderTarget::setActive(bool active)
+    {
+        glBindFramebuffer(GL_FRAMEBUFFER, active ? glObject : GL_NONE);
+    }
 #pragma endregion RenderTarget
 #pragma region RenderTexture
     RenderTexture::RenderTexture()
@@ -1586,10 +1590,6 @@ namespace sf
     void RenderTexture::display()
     {
         // noop?
-    }
-    void RenderTexture::setActive(bool active)
-    {
-        glBindFramebuffer(GL_FRAMEBUFFER, active ? glObject : GL_NONE);
     }
     const Texture& RenderTexture::getTexture() const
     {

@@ -29,6 +29,7 @@ namespace sf
 		void popGLStates();
 		void pushGLStates();
 		void resetGLStates();
+		void setActive(bool active = true);
 		SDL_Texture* sdlObject = nullptr;
 		uint32_t glObject = 0;
 	private:

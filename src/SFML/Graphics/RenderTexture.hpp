@@ -15,7 +15,6 @@ namespace sf
 		void setRepeated(bool repeated);
 		void setSmooth(bool smooth);
 		void display();
-		void setActive(bool);
 		const Texture& getTexture() const;
 		sf::Vector2u getSize() const override final;
 	private:
