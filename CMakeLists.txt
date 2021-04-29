@@ -74,10 +74,8 @@ if(NOT ${SFML_FOUND})
     set(SFML_LIBRARIES
         "-L${SFML_ROOT}/lib"
         "${CMAKE_${_SFML_LIB_TYPE}_LIBRARY_PREFIX}sfml-audio${CMAKE_${_SFML_LIB_SUFFIX}_LIBRARY_SUFFIX}"
-        "${CMAKE_${_SFML_LIB_TYPE}_LIBRARY_PREFIX}sfml-graphics${CMAKE_${_SFML_LIB_SUFFIX}_LIBRARY_SUFFIX}"
         "${CMAKE_${_SFML_LIB_TYPE}_LIBRARY_PREFIX}sfml-network${CMAKE_${_SFML_LIB_SUFFIX}_LIBRARY_SUFFIX}"
         "${CMAKE_${_SFML_LIB_TYPE}_LIBRARY_PREFIX}sfml-system${CMAKE_${_SFML_LIB_SUFFIX}_LIBRARY_SUFFIX}"
-        "${CMAKE_${_SFML_LIB_TYPE}_LIBRARY_PREFIX}sfml-window${CMAKE_${_SFML_LIB_SUFFIX}_LIBRARY_SUFFIX}"
     )
 endif()
 
@@ -248,10 +246,8 @@ if(WIN32)
         FILES
             "${SFML_ROOT}/bin/OpenAL32.dll"
             "${SFML_ROOT}/bin/sfml-audio-2.dll"
-            "${SFML_ROOT}/bin/sfml-graphics-2.dll"
             "${SFML_ROOT}/bin/sfml-network-2.dll"
             "${SFML_ROOT}/bin/sfml-system-2.dll"
-            "${SFML_ROOT}/bin/sfml-window-2.dll"
         DESTINATION .
         COMPONENT runtime
     )
