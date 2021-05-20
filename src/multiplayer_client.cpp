@@ -30,7 +30,7 @@ P<MultiplayerObject> GameClient::getObjectById(int32_t id)
     return NULL;
 }
 
-void GameClient::update(float delta)
+void GameClient::update(float /*delta*/)
 {
     if (status == ReadyToConnect)
     {
@@ -73,6 +73,8 @@ void GameClient::update(float delta)
 
                     if (server_version != 0 && server_version != version_number)
                     {
+                        require_password = false; // forcibly send an empty pass, we're about to fail anyway.
+                        disconnect_reason = DisconnectReason::VersionMismatch;
                         LOG(INFO) << "Server version " << server_version << " does not match client version " << version_number;
                     }
 
@@ -89,6 +91,7 @@ void GameClient::update(float delta)
             case CMD_SET_CLIENT_ID:
                 packet >> client_id;
                 status = Connected;
+                disconnect_reason = DisconnectReason::None;
                 break;
             case CMD_ALIVE:
                 // send response to calculate ping
@@ -187,7 +190,7 @@ void GameClient::update(float delta)
                     packet >> id;
                     const unsigned char* ptr = reinterpret_cast<const unsigned char*>(packet.getData());
                     ptr += sizeof(command_t) + sizeof(int32_t);
-                    int32_t size = packet.getDataSize() - sizeof(command_t) - sizeof(int32_t);
+                    int32_t size = static_cast<int>(packet.getDataSize()) - sizeof(command_t) - sizeof(int32_t);
                     audio_stream_manager.receivedPacketFromNetwork(id, ptr, size);
                 }
                 break;
@@ -212,8 +215,11 @@ void GameClient::update(float delta)
         }
     }
 
-    if (socket_status == sf::TcpSocket::Disconnected || last_receive_time.getElapsedTime().asSeconds() > no_data_disconnect_time)
+    auto timed_out = last_receive_time.getElapsedTime().asSeconds() > no_data_disconnect_time;
+    if (socket_status == sf::TcpSocket::Disconnected || timed_out)
     {
+        if (disconnect_reason == DisconnectReason::None)
+            disconnect_reason = timed_out ? DisconnectReason::TimedOut : DisconnectReason::ClosedByServer;
         socket.disconnect();
         status = Disconnected;
     }
@@ -229,6 +235,7 @@ void GameClient::sendPassword(string password)
     if (status != WaitingForPassword)
         return;
 
+    disconnect_reason = DisconnectReason::BadCredentials;
     sf::Packet reply;
     reply << CMD_CLIENT_SEND_AUTH << int32_t(version_number) << password;
     socket.send(reply);
@@ -238,7 +245,7 @@ void GameClient::sendPassword(string password)
 
 void GameClient::runConnect()
 {
-    if (socket.connect(server, port_nr, sf::seconds(5)) == sf::TcpSocket::Done)
+    if (socket.connect(server, static_cast<uint16_t>(port_nr), sf::seconds(5)) == sf::TcpSocket::Done)
     {
         LOG(INFO) << "GameClient: Connected, waiting for authentication";
         status = Authenticating;
