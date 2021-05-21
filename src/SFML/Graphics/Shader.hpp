@@ -25,6 +25,7 @@ namespace sf
 		static bool isAvailable();
 		static void bind(const Shader* shader);
 		bool loadFromFile(const std::string&, Type);
+		bool loadFromStream(InputStream&, Type);
 		bool loadFromStream(InputStream& vertexShaderStream, InputStream& fragmentShaderStream);
 
 		template<typename T>

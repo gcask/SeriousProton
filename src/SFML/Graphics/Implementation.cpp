@@ -1879,6 +1879,36 @@ namespace sf
             return status == GL_TRUE;
         }
     }
+
+    bool Shader::loadFromStream(InputStream& stream, Type type)
+    {
+        SDL_assert(program == 0);
+        auto* target = type == sf::Shader::Fragment ? &fragmentShader : &vertexShader;
+        *target = glCreateShader(type == sf::Shader::Fragment ? GL_FRAGMENT_SHADER : GL_VERTEX_SHADER);
+        if (!compileShader(*target, stream))
+        {
+            glDeleteShader(*target);
+            *target = 0;
+            return false;
+        }
+
+        program = glCreateProgram();
+        glAttachShader(program, *target);
+        glLinkProgram(program);
+
+        GLint status = GL_FALSE;
+        glGetProgramiv(program, GL_LINK_STATUS, &status);
+        if (status == GL_FALSE)
+        {
+            glDeleteProgram(program);
+            program = 0;
+            glDeleteShader(*target);
+            *target = 0;
+        }
+
+        return program != 0;
+    }
+
     bool Shader::loadFromStream(InputStream& vertexShaderStream, InputStream& fragmentShaderStream)
     {
         SDL_assert(program == 0);
@@ -1905,7 +1935,19 @@ namespace sf
         glAttachShader(program, fragmentShader);
         glLinkProgram(program);
 
-        return true;
+        GLint status = GL_FALSE;
+        glGetProgramiv(program, GL_LINK_STATUS, &status);
+        if (status == GL_FALSE)
+        {
+            glDeleteProgram(program);
+            program = 0;
+            glDeleteShader(fragmentShader);
+            fragmentShader = 0;
+            glDeleteShader(vertexShader);
+            vertexShader = 0;
+        }
+
+        return program != 0;
     }
     int32_t Shader::attribute(const char* name) const
     {
