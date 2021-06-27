@@ -203,7 +203,7 @@ target_compile_options(seriousproton_deps
 target_link_libraries(seriousproton_deps
     INTERFACE 
         box2d lua $<BUILD_INTERFACE:SFMLoverSDL> $<BUILD_INTERFACE:glad> $<BUILD_INTERFACE:glm::glm>
-        "$<$<BOOL:${WIN32}>:wsock32 ws2_32 crypt32>"
+        "$<$<BOOL:${WIN32}>:wsock32;ws2_32;crypt32>"
         # LTO flag must be on the linker's list as well.
         "$<$<AND:$<BOOL:${CMAKE_COMPILER_IS_GNUCC}>,$<OR:$<CONFIG:RelWithDebInfo>,$<CONFIG:Release>>>:-flto>"
         "$<BUILD_INTERFACE:opus;$<$<BOOL:${SERIOUSPROTON_WITH_JSON}>:json11>;$<$<NOT:$<BOOL:${ANDROID}>>:${CMAKE_DL_LIBS}>>"

@@ -47,8 +47,6 @@ void GameClient::update(float /*delta*/)
         else
             ++it;
     }
-    for(unsigned int n=0; n<delList.size(); n++)
-        objectMap.erase(delList[n]);
 
     sp::io::DataBuffer reply;
     sp::io::DataBuffer packet;

@@ -2,7 +2,6 @@
 #define NETWORK_AUDIO_RECORDER_H
 
 #include <SFML/Audio.hpp>
-#include <SFML/Window.hpp>
 #include "SDL_events.h"
 #include <stdint.h>
 #include <list>

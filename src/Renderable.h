@@ -1,7 +1,6 @@
 #ifndef RENDERABLE_H
 #define RENDERABLE_H
-#include <SFML/System/NonCopyable.hpp>
-
+#include <SFML/Graphics/RenderTarget.hpp>
 #include "P.h"
 
 class Renderable;
