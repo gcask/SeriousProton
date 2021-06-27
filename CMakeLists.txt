@@ -17,6 +17,10 @@ endif()
 # Preflight checks.
 message(STATUS "Crash Logger is " ${ENABLE_CRASH_LOGGER})
 
+set(EXTERNALS_DIR "${PROJECT_BINARY_DIR}/externals")
+set(DOWNLOADS_DIR "${PROJECT_BINARY_DIR}/downloads")
+file(MAKE_DIRECTORY "${EXTERNAL_DIR}" "${DOWNLOADS_DIR}")
+
 if(ENABLE_CRASH_LOGGER)
     if(NOT DRMINGW_ROOT)
         message("Downloading Dr. MinGW")
@@ -51,7 +55,7 @@ if(NOT ${SFML_FOUND})
     include(ExternalProject)
 
     ExternalProject_Add(SFML
-        GIT_REPOSITORY https://github.com/SFML/SFML.git
+        GIT_REPOSITORY git@github.com:SFML/SFML.git
         GIT_TAG 2.5.1 #Always build with this tag, so we're sure it is stable.
         GIT_SHALLOW 1 # Don't get the entire history
         CMAKE_ARGS
@@ -79,6 +83,22 @@ if(NOT ${SFML_FOUND})
     )
 endif()
 
+
+find_package(glm QUIET)
+if(NOT ${glm_FOUND})
+    set(GLM_BASE_PATH "${EXTERNALS_DIR}")
+
+    if(NOT EXISTS "${GLM_BASE_PATH}/glm/CMakeLists.txt")
+        set(GLM_ZIP "${DOWNLOADS_DIR}/glm.zip")
+        file(DOWNLOAD "https://github.com/g-truc/glm/releases/download/0.9.9.8/glm-0.9.9.8.zip" "${GLM_ZIP}" TIMEOUT 60 TLS_VERIFY ON)
+
+        file(MAKE_DIRECTORY "${GLM_BASE_PATH}/glm")
+        execute_process(COMMAND ${CMAKE_COMMAND} -E tar -xf "${GLM_ZIP}" WORKING_DIRECTORY "${GLM_BASE_PATH}")
+    endif()
+
+    add_subdirectory("${GLM_BASE_PATH}/glm" "${PROJECT_BINARY_DIR}/glm" EXCLUDE_FROM_ALL)
+endif()
+
 add_subdirectory(src/Box2D)
 add_subdirectory(src/lua)
 add_subdirectory(src/GL)
@@ -95,7 +115,6 @@ set(source_files #All SeriousProton's objects to compile
     src/collisionable.cpp
     src/engine.cpp
     src/event.cpp
-    src/fixedSocket.cpp
     src/gameEntity.cpp
     src/httpServer.cpp
     src/i18n.cpp
@@ -124,6 +143,13 @@ set(source_files #All SeriousProton's objects to compile
     src/Updatable.cpp
     src/windowManager.cpp
     src/xxhash.c
+    src/io/network/address.cpp
+    src/io/network/selector.cpp
+    src/io/network/socketBase.cpp
+    src/io/network/tcpListener.cpp
+    src/io/network/tcpSocket.cpp
+    src/io/network/udpSocket.cpp
+    src/io/http/request.cpp
 )
 
 if(NOT ANDROID)
@@ -192,8 +218,8 @@ target_compile_options(seriousproton_deps
 
 target_link_libraries(seriousproton_deps
     INTERFACE 
-        box2d lua $<BUILD_INTERFACE:SFMLoverSDL> $<BUILD_INTERFACE:glad>
-        "$<$<BOOL:${WIN32}>:wsock32>"
+        box2d lua $<BUILD_INTERFACE:SFMLoverSDL> $<BUILD_INTERFACE:glad> $<BUILD_INTERFACE:glm::glm>
+        "$<$<BOOL:${WIN32}>:wsock32 ws2_32 crypt32>"
         # LTO flag must be on the linker's list as well.
         "$<$<AND:$<BOOL:${CMAKE_COMPILER_IS_GNUCC}>,$<OR:$<CONFIG:RelWithDebInfo>,$<CONFIG:Release>>>:-flto>"
         "$<BUILD_INTERFACE:opus;$<$<BOOL:${SERIOUSPROTON_WITH_JSON}>:json11>;$<$<NOT:$<BOOL:${ANDROID}>>:${CMAKE_DL_LIBS}>>"

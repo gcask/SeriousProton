@@ -1,5 +1,5 @@
 #include "multiplayer_server_scanner.h"
-
+#include "io/http/request.h"
 
 ServerScanner::ServerScanner(int version_number, int server_port)
 : server_port(server_port), version_number(version_number)
@@ -61,10 +61,12 @@ void ServerScanner::scanLocalNetwork()
     }
     server_list_mutex.unlock();
 
-    socket = std::unique_ptr<sf::UdpSocket>(new sf::UdpSocket());
+    socket = std::make_unique<sp::io::network::UdpSocket>();
     int port_nr = server_port + 1;
-    while(socket->bind(static_cast<uint16_t>(port_nr)) != sf::UdpSocket::Done)
+    while(!socket->bind(static_cast<uint16_t>(port_nr)))
         port_nr++;
+    if (!socket->joinMulticast(666))
+        LOG(ERROR, "Failed to join multicast for local network discovery");
 
     socket->setBlocking(false);
     broadcast_clock.restart();
@@ -89,16 +91,16 @@ void ServerScanner::update(float /*gameDelta*/)
     {
         if (broadcast_clock.getElapsedTime().asSeconds() > BroadcastTimeout)
         {
-            sf::Packet sendPacket;
+            sp::io::DataBuffer sendPacket;
             sendPacket << multiplayerVerficationNumber << "ServerQuery" << int32_t(version_number);
-            UDPbroadcastPacket(*socket, sendPacket, server_port);
+            socket->sendMulticast(sendPacket, 666, server_port);
             broadcast_clock.restart();
         }
 
-        sf::IpAddress recv_address;
-        unsigned short recv_port;
-        sf::Packet recv_packet;
-        while(socket->receive(recv_packet, recv_address, recv_port) == sf::UdpSocket::Done)
+        sp::io::network::Address recv_address;
+        int recv_port;
+        sp::io::DataBuffer recv_packet;
+        while(socket->receive(recv_packet, recv_address, recv_port))
         {
             int32_t verification, version_nr;
             string name;
@@ -111,7 +113,7 @@ void ServerScanner::update(float /*gameDelta*/)
     }
 }
 
-void ServerScanner::updateServerEntry(sf::IpAddress address, int port, string name)
+void ServerScanner::updateServerEntry(sp::io::network::Address address, int port, string name)
 {
     sf::Lock lock(server_list_mutex);
     
@@ -126,7 +128,7 @@ void ServerScanner::updateServerEntry(sf::IpAddress address, int port, string na
         }
     }
 
-    LOG(INFO) << "ServerScanner::New server: " << address.toString() << " " << port << " " << name;
+    LOG(INFO) << "ServerScanner::New server: " << address.getHumanReadable()[0] << " " << port << " " << name;
     ServerInfo si;
     si.address = address;
     si.port = port;
@@ -138,7 +140,7 @@ void ServerScanner::updateServerEntry(sf::IpAddress address, int port, string na
         newServerCallback(address, name);
 }
 
-void ServerScanner::addCallbacks(std::function<void(sf::IpAddress, string)> newServerCallbackIn, std::function<void(sf::IpAddress)> removedServerCallbackIn)
+void ServerScanner::addCallbacks(std::function<void(sp::io::network::Address, string)> newServerCallbackIn, std::function<void(sp::io::network::Address)> removedServerCallbackIn)
 {
     this->newServerCallback = newServerCallbackIn;
     this->removedServerCallback = removedServerCallbackIn;
@@ -184,22 +186,20 @@ void ServerScanner::masterServerScanThread()
 
     LOG(INFO) << "Reading servers from master server " << master_server_url;
 
-    sf::Http http(hostname, static_cast<uint16_t>(port));
+    sp::io::http::Request http(hostname, port);
     while(!isDestroyed() && master_server_url != "")
     {
-        sf::Http::Request request(uri, sf::Http::Request::Get);
-        sf::Http::Response response = http.sendRequest(request, sf::seconds(10.0f));
-        
-        if (response.getStatus() != sf::Http::Response::Ok)
+        auto response = http.get(uri);
+        if (response.status != 200)
         {
-            LOG(WARNING) << "Failed to query master server " << master_server_url << " (status " << response.getStatus() << ")";
+            LOG(WARNING) << "Failed to query master server " << master_server_url << " (status " << response.status << ")";
         }
-        for(string line : string(response.getBody()).split("\n"))
+        for(string line : response.body.split("\n"))
         {
             std::vector<string> parts = line.split(":", 3);
             if (parts.size() == 4)
             {
-                sf::IpAddress address(parts[0]);
+                sp::io::network::Address address(parts[0]);
                 int part_port = parts[1].toInt();
                 int version = parts[2].toInt();
                 string name = parts[3];

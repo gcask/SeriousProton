@@ -2,11 +2,13 @@
 #define HTTP_SERVER_H
 
 #include <unordered_map>
-#include <SFML/Network.hpp>
+#include "io/network/tcpListener.h"
+#include "io/network/tcpSocket.h"
+#include "io/network/selector.h"
 #include "Updatable.h"
 #include "stringImproved.h"
 
-class HttpRequest : public sf::NonCopyable
+class HttpRequest : sp::NonCopyable
 {
 public:
     string method;
@@ -18,7 +20,7 @@ public:
 
 class HttpServer;
 class HttpServerConnection;
-class HttpRequestHandler : public sf::NonCopyable
+class HttpRequestHandler : sp::NonCopyable
 {
 public:
     HttpRequestHandler() {}
@@ -36,7 +38,7 @@ public:
     virtual bool handleRequest(HttpRequest& request, HttpServerConnection* connection);
 };
 
-class HttpServerConnection: public sf::NonCopyable
+class HttpServerConnection : sp::NonCopyable
 {
 private:
     enum Status
@@ -54,7 +56,7 @@ private:
     int reply_code;
     bool headers_send;
 public:
-    sf::TcpSocket socket;
+    sp::io::network::TcpSocket socket;
 
     HttpServerConnection(HttpServer* server);
     bool read();
@@ -72,8 +74,8 @@ private:
 class HttpServer: public Updatable
 {
 private:
-    sf::TcpListener listenSocket;
-    sf::SocketSelector selector;
+    sp::io::network::TcpListener listenSocket;
+    sp::io::network::Selector selector;
     std::vector<HttpServerConnection*> connections;
     std::vector<HttpRequestHandler*> handlers;
 public:
