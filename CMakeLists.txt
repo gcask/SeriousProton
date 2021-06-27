@@ -46,7 +46,7 @@ if(ENABLE_CRASH_LOGGER)
 endif()
 
 #--------------------------------Dependencies----------------------------------
-find_package(SFML 2.5 COMPONENTS system audio network)
+find_package(SFML 2.5 COMPONENTS system audio)
 if(NOT ${SFML_FOUND})
     message(STATUS "Couldn't find SFML. Building it from scratch.")
     
@@ -78,7 +78,6 @@ if(NOT ${SFML_FOUND})
     set(SFML_LIBRARIES
         "-L${SFML_ROOT}/lib"
         "${CMAKE_${_SFML_LIB_TYPE}_LIBRARY_PREFIX}sfml-audio${CMAKE_${_SFML_LIB_SUFFIX}_LIBRARY_SUFFIX}"
-        "${CMAKE_${_SFML_LIB_TYPE}_LIBRARY_PREFIX}sfml-network${CMAKE_${_SFML_LIB_SUFFIX}_LIBRARY_SUFFIX}"
         "${CMAKE_${_SFML_LIB_TYPE}_LIBRARY_PREFIX}sfml-system${CMAKE_${_SFML_LIB_SUFFIX}_LIBRARY_SUFFIX}"
     )
 endif()
@@ -267,7 +266,6 @@ if(WIN32)
         FILES
             "${SFML_ROOT}/bin/OpenAL32.dll"
             "${SFML_ROOT}/bin/sfml-audio-2.dll"
-            "${SFML_ROOT}/bin/sfml-network-2.dll"
             "${SFML_ROOT}/bin/sfml-system-2.dll"
         DESTINATION .
         COMPONENT runtime
